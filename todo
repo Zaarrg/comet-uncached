@@ -1,0 +1,13 @@
+- Added Sorting of Results by Resolution + WebUi
+- Added a Max Uncached Option to limit those results + WebUi
+- Added a WebUi for which indexers to consider for uncached results
+- Added Validation for selected uncached indexers
+- Added Uncached Warning to title (Only for the selected indexers)
+- Modified Real Debrid to handle uncached files
+	- Added DB Table to cache uncached files + cleanup
+
+Still need to do:
+- Check other indexer, what if a magneturi is provided and a link for private indexers?
+- Check FileResponse, cause not working on localhost
+- Check if works with zilean and torrentio
+- Check prowlarr, as some private trackers on prowlarr return no infoHash, even tho Jackett does
