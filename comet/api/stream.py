@@ -312,7 +312,13 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         # Adding missing torrents to the files dict based on config
         if allowed_tracker_ids:
             for torrent in torrents:
-                if torrent["TrackerId"] in allowed_tracker_ids:
+                tracker = ""
+                if settings.INDEXER_MANAGER_TYPE == 'prowlarr':
+                    tracker = torrent.get("Tracker", "").lower()
+                else:
+                    tracker = torrent.get("TrackerId", "").lower()
+                allowed_tracker_ids = [tracker_id.lower() for tracker_id in allowed_tracker_ids]
+                if tracker in allowed_tracker_ids:
                     info_hash = torrent["InfoHash"]
                     if info_hash not in cached_info_hashes:
                         max_index += 1
