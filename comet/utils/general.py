@@ -476,7 +476,9 @@ async def get_torrent_hash(session: aiohttp.ClientSession, torrent: tuple):
 def get_balanced_hashes(hashes: dict, config: dict):
     max_results = config["maxResults"]
     max_size = config["maxSize"]
+    max_uncached = config.get("maxUncached", 0)
     config_resolutions = config["resolutions"]
+    config_resolutions_order = config.get("resolutionsOrder", [])
     config_languages = {
         language.replace("_", " ").capitalize() for language in config["languages"]
     }
@@ -487,11 +489,18 @@ def get_balanced_hashes(hashes: dict, config: dict):
     )
 
     hashes_by_resolution = {}
+    uncached_count = 0
     for hash, hash_data in hashes.items():
         hash_info = hash_data["data"]
 
         if max_size != 0 and hash_info["size"] > max_size:
             continue
+
+        # Skip further uncached entries if max_uncached limit is reached
+        if hash_info.get("uncached", False):
+            if 0 < max_uncached <= uncached_count:
+                continue
+            uncached_count += 1
 
         if (
             not include_all_languages
@@ -509,10 +518,23 @@ def get_balanced_hashes(hashes: dict, config: dict):
             resolution_key = resolution[0]
             if not include_all_resolutions and resolution_key not in config_resolutions:
                 continue
-
+        if "Uncached" in config["resolutionsOrder"]:
+            if hash_info.get("uncached", False):
+                resolution_key = "Uncached"
         if resolution_key not in hashes_by_resolution:
             hashes_by_resolution[resolution_key] = []
         hashes_by_resolution[resolution_key].append(hash)
+
+    # Sort by config_resolutions_order
+    def sort_by_resolution(res):
+        try:
+            return config_resolutions_order.index(res)
+        except ValueError:
+            return len(config_resolutions_order)
+
+    hashes_by_resolution = dict(
+        sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
+    )
 
     total_resolutions = len(hashes_by_resolution)
     if max_results == 0 or total_resolutions == 0:
@@ -576,6 +598,9 @@ def format_title(data: dict, config: dict):
         title += f"💾 {bytes_to_size(data['size'])} "
     if "Tracker" in config["resultFormat"] or "All" in config["resultFormat"]:
         title += f"🔎 {data['tracker'] if 'tracker' in data else '?'}"
+    if "Uncached" in config["resultFormat"] or "All" in config["resultFormat"]:
+        if data.get("uncached", False):
+            title += f"⚠️ Uncached"
     if "Languages" in config["resultFormat"] or "All" in config["resultFormat"]:
         languages = data["language"]
         formatted_languages = (

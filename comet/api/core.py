@@ -39,7 +39,19 @@ web_config = {
         "4K",
         "Unknown",
     ],
-    "resultFormat": ["Title", "Metadata", "Size", "Tracker", "Languages"],
+    "resultOrder": [
+        "4K",
+        "2160p",
+        "1440p",
+        "1080p",
+        "720p",
+        "576p",
+        "480p",
+        "360p",
+        "Uncached",
+        "Unknown",
+    ],
+    "resultFormat": ["Title", "Metadata", "Size", "Tracker", "Uncached", "Languages"],
 }
 
 

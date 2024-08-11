@@ -119,6 +119,19 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 )
 
                 logger.info(f"Cache expired for {log_name}")
+
+                # Delete uncached torrents matching cacheKey and with no torrentId
+                await database.execute(
+                    """
+                    DELETE FROM uncached_torrents
+                    WHERE cacheKey = :cache_key AND 
+                          (torrentId IS NULL OR 
+                           TRIM(torrentId) = '')
+                    """,
+                    {"cache_key": cache_key}
+                )
+
+                logger.info(f"Expired uncached torrents removed for {log_name}")
             else:
                 sorted_ranked_files = await database.fetch_one(
                     f"SELECT results FROM cache WHERE cacheKey = '{cache_key}'"
@@ -143,13 +156,11 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                             "url": "https://comet.fast",
                         }
                     )
-
-                for (
-                    hash,
-                    hash_data,
-                ) in sorted_ranked_files.items():
-                    for resolution, hash_list in balanced_hashes.items():
-                        if hash in hash_list:
+                results = []
+                for resolution, hash_list in balanced_hashes.items():
+                    for hash in hash_list:
+                        if hash in sorted_ranked_files:
+                            hash_data = sorted_ranked_files[hash]
                             data = hash_data["data"]
                             results.append(
                                 {
@@ -168,8 +179,6 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                                     "url": f"{request.url.scheme}://{request.url.netloc}/{b64config}/playback/{hash}/{data['index']}",
                                 }
                             )
-
-                            continue
 
                 return {"streams": results}
         else:
@@ -291,6 +300,53 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             kitsu,
         )
 
+        # Find the highest existing index in files dict
+        max_index = max(
+            (int(files[key]["index"]) for key in files if files[key]["index"] is not None), default=0
+        )
+        # Create a set of all existing info_hashes in the files dict for faster lookup
+        cached_info_hashes = set(files.keys())
+        # Prepare a list for batch database insertion
+        uncached_torrents = []
+        allowed_tracker_ids = config.get('indexersUncached', [])
+        # Adding missing torrents to the files dict based on config
+        if allowed_tracker_ids:
+            for torrent in torrents:
+                if torrent["TrackerId"] in allowed_tracker_ids:
+                    info_hash = torrent["InfoHash"]
+                    if info_hash not in cached_info_hashes:
+                        max_index += 1
+                        # Adding uncached Torrents to all found cached files
+                        torrent_data = {
+                            "index": str(max_index),
+                            "title": torrent["Title"],
+                            "size": torrent["Size"],
+                            "uncached": True,
+                            "link": torrent["Link"],
+                        }
+                        files[info_hash] = torrent_data
+
+                        # Add to the batch list for database insertion
+                        uncached_torrents.append({
+                            "hash": info_hash,
+                            "torrentId": "",
+                            "data": json.dumps(torrent_data),
+                            "cacheKey": cache_key
+                        })
+
+            # Perform batch insert of uncached torrents into the database
+            if uncached_torrents:
+                await database.execute_many(
+                    "INSERT OR REPLACE INTO uncached_torrents (hash, torrentId, data, cacheKey) VALUES (:hash, :torrentId, :data, :cacheKey)",
+                    uncached_torrents
+                )
+            length_uncached = sum(
+                1 for file in files.values() if file.get("uncached", False)
+            )
+            logger.info(
+                f"{length_uncached} uncached files found on {allowed_tracker_ids} for {log_name}"
+            )
+
         ranked_files = set()
         for hash in files:
             # try:
@@ -329,6 +385,9 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             sorted_ranked_files[hash]["data"]["torrent_size"] = torrents_by_hash[hash][
                 "Size"
             ]
+            sorted_ranked_files[hash]["data"]["uncached"] = files[hash][
+                "uncached"
+            ]
             sorted_ranked_files[hash]["data"]["index"] = files[hash]["index"]
 
         json_data = json.dumps(sorted_ranked_files).replace("'", "''")
@@ -357,9 +416,11 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 }
             )
 
-        for hash, hash_data in sorted_ranked_files.items():
-            for resolution, hash_list in balanced_hashes.items():
-                if hash in hash_list:
+        results = []
+        for resolution, hash_list in balanced_hashes.items():
+            for hash in hash_list:
+                if hash in sorted_ranked_files:
+                    hash_data = sorted_ranked_files[hash]
                     data = hash_data["data"]
                     results.append(
                         {
@@ -370,9 +431,6 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                             "url": f"{request.url.scheme}://{request.url.netloc}/{b64config}/playback/{hash}/{data['index']}",
                         }
                     )
-
-                    continue
-
         return {"streams": results}
 
 
@@ -409,10 +467,35 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
 
         if not download_link:
             debrid = getDebrid(session, config)
-            download_link = await debrid.generate_download_link(hash, index)
+            # Fetch uncached torrent data from the database
+            uncached_torrent = await database.fetch_one(
+                "SELECT data, torrentId  FROM uncached_torrents WHERE hash = :hash",
+                {"hash": hash}
+            )
+
+            torrent_id = ""
+            if uncached_torrent:
+                torrent_data = json.loads(uncached_torrent["data"])
+                torrent_link = torrent_data.get("link")
+                # Retrieve torrentId to prevent multi uploads of same file
+                torrent_id = uncached_torrent["torrentId"]
+                index = torrent_data.get("index", index)
+            else:
+                torrent_link = None
+
+            if config["debridService"] == 'realdebrid':
+                download_link = await debrid.generate_download_link(hash, index, torrent_link, torrent_id)
+            else:
+                download_link = await debrid.generate_download_link(hash, index)
+
             if not download_link:
                 return FileResponse("comet/assets/uncached.mp4")
-
+            # Cleanup uncached Torrent from db
+            if uncached_torrent:
+                await database.execute(
+                    "DELETE FROM uncached_torrents WHERE hash = :hash",
+                    {"hash": hash}
+                )
             # Cache the new download link
             await database.execute(
                 "INSERT OR REPLACE INTO download_links (debrid_key, hash, `index`, link, timestamp) VALUES (:debrid_key, :hash, :index, :link, :timestamp)",

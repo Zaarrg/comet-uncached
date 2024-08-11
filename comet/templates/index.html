@@ -516,6 +516,10 @@
             </div>
 
             <div class="form-item">
+                <sl-select id="indexersUncached" multiple clearable label="Indexers Uncached" placeholder="Select indexers for uncached results"></sl-select>
+            </div>
+
+            <div class="form-item">
                 <sl-select id="languages" multiple clearable label="Languages" placeholder="Select languages"></sl-select>
             </div>
 
@@ -525,6 +529,10 @@
 
             <div class="form-item">
                 <sl-input id="maxResults" type="number" min=0 value=0 label="Max Results" placeholder="Enter max results"></sl-input>
+            </div>
+
+            <div class="form-item">
+                <sl-input id="maxUncached" type="number" min=0 value=0 label="Max Uncached" placeholder="Enter max uncached results"></sl-input>
             </div>
 
             <div class="form-item">
@@ -556,6 +564,10 @@
             <sl-details summary="Advanced Settings">
                 <div class="form-item">
                     <sl-select id="resultFormat" multiple label="Result Format" placeholder="Select what to show in result title" hoist max-options-visible=10>
+                    </sl-select>
+                </div>
+                <div class="form-item">
+                    <sl-select id="resolutionsOrder" multiple label="Result Order" placeholder="Select what order to show" hoist max-options-visible=10>
                     </sl-select>
                 </div>
             </sl-details>
@@ -609,9 +621,11 @@
 
                         const webConfig = {{webConfig|tojson}};
                         populateSelect("indexers", webConfig.indexers);
+                        populateSelect("indexersUncached", webConfig.indexers);
                         populateSelect("languages", webConfig.languages);
                         populateSelect("resolutions", webConfig.resolutions);
                         populateSelect("resultFormat", webConfig.resultFormat);
+                        populateSelect("resolutionsOrder", webConfig.resultOrder);
                         document.body.classList.add("ready");
                         defaultLanguages = webConfig.languages;
                         defaultResolutions = webConfig.resolutions;
@@ -645,11 +659,14 @@
 
                     function getSettings() {
                         const indexers = Array.from(document.getElementById("indexers").selectedOptions).map(option => option.value);
+                        const indexersUncached = Array.from(document.getElementById("indexersUncached").selectedOptions).map(option => option.value);
                         const languages = Array.from(document.getElementById("languages").selectedOptions).map(option => option.value);
                         const resolutions = Array.from(document.getElementById("resolutions").selectedOptions).map(option => option.value);
                         const maxResults = document.getElementById("maxResults").value;
+                        const maxUncached = document.getElementById("maxUncached").value;
                         const maxSize = document.getElementById("maxSize").value;
                         const resultFormat = Array.from(document.getElementById("resultFormat").selectedOptions).map(option => option.value);
+                        const resolutionsOrder = Array.from(document.getElementById("resolutionsOrder").selectedOptions).map(option => option.value);
                         const debridService = document.getElementById("debridService").value;
                         const debridApiKey = document.getElementById("debridApiKey").value;
                         const debridStreamProxyPassword = document.getElementById("debridStreamProxyPassword").value;
@@ -659,10 +676,13 @@
 
                         return {
                             indexers: indexers,
+                            indexersUncached: indexersUncached,
                             maxResults: parseInt(maxResults),
+                            maxUncached: maxUncached,
                             maxSize: parseFloat(maxSize * 1073741824),
                             resultFormat: selectedResultFormat,
                             resolutions: selectedResolutions,
+                            resolutionsOrder: resolutionsOrder,
                             languages: selectedLanguages,
                             debridService: debridService,
                             debridApiKey: debridApiKey,
@@ -712,11 +732,14 @@
 
                     function populateFormFromSettings(settings) {
                         document.getElementById("maxResults").value = settings.maxResults;
+                        document.getElementById("maxUncached").value = settings.maxUncached;
                         document.getElementById("maxSize").value = settings.maxSize / 1073741824; // Convert back from bytes to GB
                         document.getElementById("debridService").value = settings.debridService;
                         document.getElementById("debridApiKey").value = settings.debridApiKey;
                         document.getElementById("debridStreamProxyPassword").value = settings.debridStreamProxyPassword;
                         document.getElementById("indexers").value = settings.indexers;
+                        document.getElementById("indexersUncached").value = settings.indexersUncached;
+                        document.getElementById("resolutionsOrder").value = settings.resolutionsOrder;
                         if (settings.languages != "All")
                             document.getElementById("languages").value = settings.languages;
                         if (settings.resolutions != "All")

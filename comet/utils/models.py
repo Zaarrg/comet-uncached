@@ -38,10 +38,13 @@ settings = AppSettings()
 
 class ConfigModel(BaseModel):
     indexers: List[str]
+    indexersUncached: List[str]
     languages: Optional[List[str]] = ["All"]
     resolutions: Optional[List[str]] = ["All"]
     resultFormat: Optional[List[str]] = ["All"]
+    resolutionsOrder: Optional[List[str]] = ["4k", "2160p", "1440p", "1080p", "720p", "576p", "480p", "360p", "Unknown", "Uncached"]
     maxResults: Optional[int] = 0
+    maxUncached: Optional[int] = 0
     maxSize: Optional[float] = 0
     debridService: str
     debridApiKey: str
@@ -61,6 +64,27 @@ class ConfigModel(BaseModel):
         #         f"At least one indexer must be from {settings.INDEXER_MANAGER_INDEXERS}"
         #     )
         return valid_indexers
+
+    @field_validator("indexersUncached")
+    def check_indexers(cls, v, values):
+        settings.INDEXER_MANAGER_INDEXERS = [
+            indexer.replace(" ", "_").lower()
+            for indexer in settings.INDEXER_MANAGER_INDEXERS
+        ]  # to equal webui
+        valid_indexers = [
+            indexer for indexer in v if indexer in settings.INDEXER_MANAGER_INDEXERS
+        ]
+        # if not valid_indexers: # For only Zilean mode
+        #     raise ValueError(
+        #         f"At least one indexer must be from {settings.INDEXER_MANAGER_INDEXERS}"
+        #     )
+        return valid_indexers
+
+    @field_validator("maxUncached")
+    def check_max_results(cls, v):
+        if v < 0:
+            v = 0
+        return v
 
     @field_validator("maxResults")
     def check_max_results(cls, v):

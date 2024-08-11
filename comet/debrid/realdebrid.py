@@ -5,7 +5,7 @@ from RTN import parse
 
 from comet.utils.general import is_video
 from comet.utils.logger import logger
-from comet.utils.models import settings
+from comet.utils.models import settings, database
 
 
 class RealDebrid:
@@ -89,6 +89,7 @@ class RealDebrid:
                             "index": index,
                             "title": filename,
                             "size": file["filesize"],
+                            "uncached": False,
                         }
 
                         break
@@ -108,13 +109,14 @@ class RealDebrid:
                             "index": index,
                             "title": filename,
                             "size": file["filesize"],
+                            "uncached": False,
                         }
 
                         break
 
         return files
 
-    async def generate_download_link(self, hash: str, index: str):
+    async def generate_download_link(self, hash: str, index: str, torrent_link: str = None, possible_torrent_id: str = None):
         try:
             check_blacklisted = await self.session.get("https://real-debrid.com/vpn")
             check_blacklisted = await check_blacklisted.text()
@@ -132,20 +134,62 @@ class RealDebrid:
                         f"Real-Debrid blacklisted server's IP. Switching to proxy {self.proxy} for {hash}|{index}"
                     )
 
-            add_magnet = await self.session.post(
-                f"{self.api_url}/torrents/addMagnet",
-                data={"magnet": f"magnet:?xt=urn:btih:{hash}"},
-                proxy=self.proxy,
-            )
-            add_magnet = await add_magnet.json()
+            if possible_torrent_id:
+                # Use the provided torrentId to prevent caching multiple times
+                torrent_id = possible_torrent_id
+            elif torrent_link:
+                # If torrent_link is provided, handle the torrent file upload
+                async with self.session.get(torrent_link) as resp:
+                    torrent_data = await resp.read()
 
+                add_torrent = await self.session.put(
+                    f"{self.api_url}/torrents/addTorrent",
+                    data=torrent_data,
+                    proxy=self.proxy,
+                )
+
+                add_torrent = await add_torrent.json()
+
+                torrent_id = add_torrent.get("id")
+                logger.info(
+                    f"Started caching to Real-Debrid this might take some time: {add_torrent}"
+                )
+                if not torrent_id:
+                    raise Exception(f"Failed to get torrent ID from Real-Debrid: {add_torrent}")
+            else:
+                # Handle magnet link as before
+                add_magnet = await self.session.post(
+                    f"{self.api_url}/torrents/addMagnet",
+                    data={"magnet": f"magnet:?xt=urn:btih:{hash}"},
+                    proxy=self.proxy,
+                )
+                add_magnet = await add_magnet.json()
+
+                torrent_id = add_magnet.get("id")
+                if not torrent_id:
+                    raise Exception(f"Failed to get magnet ID from Real-Debrid: {add_magnet}")
+
+            # Get torrent information after uploading the torrent or adding the magnet link
             get_magnet_info = await self.session.get(
-                add_magnet["uri"], proxy=self.proxy
+                f"{self.api_url}/torrents/info/{torrent_id}",
+                proxy=self.proxy
             )
             get_magnet_info = await get_magnet_info.json()
 
+            # Reset TorrentId if not found, might happen if user removes it in debridManager
+            if get_magnet_info.get("error") == 'unknown_ressource':
+                logger.warning(
+                    f"Exception while getting file from Real-Debrid, please retry, for {hash}|{index}: {get_magnet_info}"
+                )
+                await database.execute(
+                    "UPDATE uncached_torrents SET torrentId = :torrent_id WHERE hash = :hash",
+                    {"torrent_id": "", "hash": hash}
+                )
+                return None
+
+            # Select the files for downloading
             await self.session.post(
-                f"{self.api_url}/torrents/selectFiles/{add_magnet['id']}",
+                f"{self.api_url}/torrents/selectFiles/{torrent_id}",
                 data={
                     "files": ",".join(
                         str(file["id"])
@@ -156,11 +200,19 @@ class RealDebrid:
                 proxy=self.proxy,
             )
 
+            # Get the updated torrent information
             get_magnet_info = await self.session.get(
-                add_magnet["uri"], proxy=self.proxy
+                f"{self.api_url}/torrents/info/{torrent_id}",
+                proxy=self.proxy
             )
             get_magnet_info = await get_magnet_info.json()
 
+            # Update the database with the retrieved torrent_id
+            if torrent_link:
+                await database.execute(
+                    "UPDATE uncached_torrents SET torrentId = :torrent_id WHERE hash = :hash",
+                    {"torrent_id": torrent_id, "hash": hash}
+                )
             index = int(index)
             realIndex = index
             for file in get_magnet_info["files"]:
@@ -170,6 +222,13 @@ class RealDebrid:
                 if file["selected"] != 1:
                     index -= 1
 
+            # Skip unrestrict if no links available yet
+            if len(get_magnet_info["links"]) == 0:
+                logger.info(
+                    f"File {hash}|{index} is uncached, please wait until its cached! Status: {get_magnet_info.get('status')} | Progress: {get_magnet_info.get('progress')}"
+                )
+                return None
+            # Get the unrestricted download link
             unrestrict_link = await self.session.post(
                 f"{self.api_url}/unrestrict/link",
                 data={"link": get_magnet_info["links"][index - 1]},
@@ -182,3 +241,4 @@ class RealDebrid:
             logger.warning(
                 f"Exception while getting download link from Real-Debrid for {hash}|{index}: {e}"
             )
+            return None
