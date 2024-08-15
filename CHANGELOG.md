@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.25.1](https://github.com/g0ldyy/comet/compare/v1.25.0...v1.25.1) (2024-08-15)
+
+
+### Bug Fixes
+
+* zilean 1.5 ([12a9bc5](https://github.com/g0ldyy/comet/commit/12a9bc59ef545ff2ff86637791609fd8e7ffec57))
+
+## [1.25.0](https://github.com/g0ldyy/comet/compare/v1.24.0...v1.25.0) (2024-08-06)
+
+
+### Features
+
+* Add metadata to result title ([33f3f96](https://github.com/g0ldyy/comet/commit/33f3f96b8c0d2416c8cdb1db8614970f714708ae))
+
 ## [1.24.0](https://github.com/g0ldyy/comet/compare/v1.23.2...v1.24.0) (2024-08-05)
 
 
