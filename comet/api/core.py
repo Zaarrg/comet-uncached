@@ -28,6 +28,10 @@ web_config = {
         language.replace(" ", "_")
         for language in RTN.patterns.language_code_mapping.keys()
     ],
+    "languagePreference": [
+        language.replace(" ", "_")
+        for language in RTN.patterns.language_code_mapping.keys()
+    ],
     "resolutions": [
         "360p",
         "480p",
@@ -51,9 +55,9 @@ web_config = {
         "Uncached",
         "Unknown",
     ],
-    "resultFormat": ["Title", "Metadata", "Size", "Tracker", "Uncached", "Languages"],
+    "resultFormat": ["Title", "Metadata", "Size", "Tracker", "Uncached", "Seeders", "Languages"],
+    "sortType": ["Sort_by_Rank", "Sort_by_Resolution", "Sort_by_Resolution_then_Seeders", "Sort_by_Resolution_then_Size"],
 }
-
 
 @main.get("/configure")
 @main.get("/{b64config}/configure")

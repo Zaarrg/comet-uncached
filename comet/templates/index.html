@@ -524,6 +524,10 @@
             </div>
 
             <div class="form-item">
+                <sl-select id="languagePreference" multiple clearable label="Language Preference" placeholder="Select languages"></sl-select>
+            </div>
+
+            <div class="form-item">
                 <sl-select id="resolutions" multiple clearable label="Resolutions" placeholder="Select resolutions"></sl-select>
             </div>
 
@@ -567,8 +571,11 @@
                     </sl-select>
                 </div>
                 <div class="form-item">
-                    <sl-select id="resolutionsOrder" multiple label="Result Order" placeholder="Select what order to show" hoist max-options-visible=10>
+                    <sl-select id="resolutionsOrder" multiple label="Result Order" help-text="Works only if sorting by Resolution." placeholder="Select what order to show" hoist max-options-visible=10>
                     </sl-select>
+                </div>
+                <div class="form-item">
+                    <sl-select id="sortType" label="Result Sorting" hoist value="Sort_by_Rank"></sl-select>
                 </div>
             </sl-details>
 
@@ -626,6 +633,11 @@
                         populateSelect("resolutions", webConfig.resolutions);
                         populateSelect("resultFormat", webConfig.resultFormat);
                         populateSelect("resolutionsOrder", webConfig.resultOrder);
+                        populateSelect("sortType", webConfig.sortType);
+                        populateSelect("languagePreference", webConfig.languagePreference)
+                        //Set Default for languagePreference
+                        const languagePrefElement = document.getElementById("languagePreference")
+                        languagePrefElement.value = ""
                         document.body.classList.add("ready");
                         defaultLanguages = webConfig.languages;
                         defaultResolutions = webConfig.resolutions;
@@ -646,7 +658,7 @@
                         options.forEach(option => {
                             const optionElement = document.createElement("sl-option");
                             optionElement.value = option;
-                            optionElement.textContent = option;
+                            optionElement.textContent = option.toString().replaceAll("_", " ");
                             selectElement.appendChild(optionElement);
                         });
                         selectElement.value = options;
@@ -661,12 +673,14 @@
                         const indexers = Array.from(document.getElementById("indexers").selectedOptions).map(option => option.value);
                         const indexersUncached = Array.from(document.getElementById("indexersUncached").selectedOptions).map(option => option.value);
                         const languages = Array.from(document.getElementById("languages").selectedOptions).map(option => option.value);
+                        const languagePreference = Array.from(document.getElementById("languagePreference").selectedOptions).map(option => option.value);
                         const resolutions = Array.from(document.getElementById("resolutions").selectedOptions).map(option => option.value);
                         const maxResults = document.getElementById("maxResults").value;
                         const maxUncached = document.getElementById("maxUncached").value;
                         const maxSize = document.getElementById("maxSize").value;
                         const resultFormat = Array.from(document.getElementById("resultFormat").selectedOptions).map(option => option.value);
                         const resolutionsOrder = Array.from(document.getElementById("resolutionsOrder").selectedOptions).map(option => option.value);
+                        const sortType = document.getElementById("sortType").value;
                         const debridService = document.getElementById("debridService").value;
                         const debridApiKey = document.getElementById("debridApiKey").value;
                         const debridStreamProxyPassword = document.getElementById("debridStreamProxyPassword").value;
@@ -683,7 +697,9 @@
                             resultFormat: selectedResultFormat,
                             resolutions: selectedResolutions,
                             resolutionsOrder: resolutionsOrder,
+                            sortType: sortType,
                             languages: selectedLanguages,
+                            languagePreference: languagePreference,
                             debridService: debridService,
                             debridApiKey: debridApiKey,
                             debridStreamProxyPassword: debridStreamProxyPassword,
@@ -740,6 +756,8 @@
                         document.getElementById("indexers").value = settings.indexers;
                         document.getElementById("indexersUncached").value = settings.indexersUncached;
                         document.getElementById("resolutionsOrder").value = settings.resolutionsOrder;
+                        document.getElementById("sortType").value = settings.sortType;
+                        document.getElementById("languagePreference").value = settings.languagePreference;
                         if (settings.languages != "All")
                             document.getElementById("languages").value = settings.languages;
                         if (settings.resolutions != "All")

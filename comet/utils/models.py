@@ -40,9 +40,11 @@ class ConfigModel(BaseModel):
     indexers: List[str]
     indexersUncached: List[str]
     languages: Optional[List[str]] = ["All"]
+    languagePreference: Optional[List[str]] = []
     resolutions: Optional[List[str]] = ["All"]
     resultFormat: Optional[List[str]] = ["All"]
-    resolutionsOrder: Optional[List[str]] = ["4k", "2160p", "1440p", "1080p", "720p", "576p", "480p", "360p", "Unknown", "Uncached"]
+    resolutionsOrder: Optional[List[str]] = []
+    sortType: str
     maxResults: Optional[int] = 0
     maxUncached: Optional[int] = 0
     maxSize: Optional[float] = 0

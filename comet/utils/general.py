@@ -7,6 +7,7 @@ import bencodepy
 
 from RTN import parse, title_match
 from curl_cffi import requests
+from databases import Database
 
 from comet.utils.logger import logger
 from comet.utils.models import settings, ConfigModel
@@ -437,6 +438,71 @@ async def filter(torrents: list, name: str):
     return results
 
 
+async def add_uncached_files(
+        files: dict,
+        torrents: list,
+        cache_key: str,
+        log_name: str,
+        allowed_tracker_ids: list,
+        config: dict,
+        database: Database
+):
+    max_index = max((int(files[key]["index"]) for key in files if files[key]["index"] is not None), default=0)
+    max_uncached = config.get("maxUncached", 0)
+    tracker_key = "Tracker" if settings.INDEXER_MANAGER_TYPE == 'prowlarr' else "TrackerId"
+    allowed_tracker_ids = [tracker_id.lower() for tracker_id in allowed_tracker_ids]
+    uncached_torrent_list = []
+    uncached_torrents = []
+
+    for torrent in torrents:
+        tracker = torrent.get(tracker_key, "").lower()
+        if tracker in allowed_tracker_ids:
+            info_hash = torrent["InfoHash"]
+            if info_hash not in files:
+                torrent_data = {
+                    "index": str(max_index + 1),
+                    "title": torrent["Title"],
+                    "size": torrent["Size"],
+                    "uncached": True,
+                    "link": torrent["Link"],
+                    "seeders": torrent.get("Seeders", 0)
+                }
+                uncached_torrent_list.append((info_hash, torrent_data))
+                max_index += 1
+
+    # Sort the uncached torrents by seeders in descending order
+    uncached_torrent_list.sort(key=lambda x: x[1]["seeders"], reverse=True)
+
+    # If max_uncached is greater than 0, limit the number of uncached torrents
+    if max_uncached > 0:
+        uncached_torrent_list = uncached_torrent_list[:max_uncached]
+
+    # Add the sorted and filtered uncached torrents to the files dict
+    for info_hash, torrent_data in uncached_torrent_list:
+        files[info_hash] = torrent_data
+
+        uncached_torrents.append({
+            "hash": info_hash,
+            "torrentId": "",
+            "data": json.dumps(torrent_data),
+            "cacheKey": cache_key
+        })
+
+    # Perform batch insert of uncached torrents into the database
+    if uncached_torrents:
+        await database.execute_many(
+            "INSERT OR REPLACE INTO uncached_torrents (hash, torrentId, data, cacheKey) VALUES (:hash, :torrentId, :data, :cacheKey)",
+            uncached_torrents
+        )
+
+    length_uncached = sum(
+        1 for file in files.values() if file.get("uncached", False)
+    )
+    logger.info(
+        f"{length_uncached} uncached files found on {allowed_tracker_ids} for {log_name}"
+    )
+
+
 async def get_torrent_hash(session: aiohttp.ClientSession, torrent: tuple):
     index = torrent[0]
     torrent = torrent[1]
@@ -476,11 +542,13 @@ async def get_torrent_hash(session: aiohttp.ClientSession, torrent: tuple):
 def get_balanced_hashes(hashes: dict, config: dict):
     max_results = config["maxResults"]
     max_size = config["maxSize"]
-    max_uncached = config.get("maxUncached", 0)
     config_resolutions = config["resolutions"]
     config_resolutions_order = config.get("resolutionsOrder", [])
     config_languages = {
         language.replace("_", " ").capitalize() for language in config["languages"]
+    }
+    config_language_preference = {
+        language.replace("_", " ").capitalize() for language in config["languagePreference"]
     }
     include_all_languages = "All" in config_languages
     include_all_resolutions = "All" in config_resolutions
@@ -489,18 +557,11 @@ def get_balanced_hashes(hashes: dict, config: dict):
     )
 
     hashes_by_resolution = {}
-    uncached_count = 0
     for hash, hash_data in hashes.items():
         hash_info = hash_data["data"]
 
         if max_size != 0 and hash_info["size"] > max_size:
             continue
-
-        # Skip further uncached entries if max_uncached limit is reached
-        if hash_info.get("uncached", False):
-            if 0 < max_uncached <= uncached_count:
-                continue
-            uncached_count += 1
 
         if (
             not include_all_languages
@@ -518,23 +579,15 @@ def get_balanced_hashes(hashes: dict, config: dict):
             resolution_key = resolution[0]
             if not include_all_resolutions and resolution_key not in config_resolutions:
                 continue
-        if "Uncached" in config["resolutionsOrder"]:
+        if "Uncached" in config["resolutionsOrder"] and "Sort_by_Rank" not in config["sortType"]:
             if hash_info.get("uncached", False):
                 resolution_key = "Uncached"
         if resolution_key not in hashes_by_resolution:
             hashes_by_resolution[resolution_key] = []
         hashes_by_resolution[resolution_key].append(hash)
 
-    # Sort by config_resolutions_order
-    def sort_by_resolution(res):
-        try:
-            return config_resolutions_order.index(res)
-        except ValueError:
-            return len(config_resolutions_order)
-
-    hashes_by_resolution = dict(
-        sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
-    )
+    # Sorting
+    hashes_by_resolution = apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config_language_preference,config.get("sortType", "Sort_by_Rank"))
 
     total_resolutions = len(hashes_by_resolution)
     if max_results == 0 or total_resolutions == 0:
@@ -563,6 +616,117 @@ def get_balanced_hashes(hashes: dict, config: dict):
 
     return balanced_hashes
 
+
+def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config_languages_preference, sort_type):
+    """Apply the specified sorting function based on the sort_type string."""
+    def sort_by_resolution(res):
+        """Sort by resolution based on the config order."""
+        try:
+            return config_resolutions_order.index(res)
+        except ValueError:
+            return len(config_resolutions_order)
+
+    def sort_by_priority_language(hash_key):
+        """Sort by priority language based on config_languages_priority."""
+        languages = hashes[hash_key]["data"].get("language", [])
+        for i, lang in enumerate(config_languages_preference):
+            if lang in languages:
+                return i
+        return len(config_languages_preference)
+
+    def sort_by_resolution_only():
+        """Sort by resolution based on the config order and sort Uncached by seeders."""
+        sorted_hashes_by_resolution = dict(
+            sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
+        )
+        return sort_uncached_by_seeders(sorted_hashes_by_resolution)
+
+    def sort_by_resolution_then_seeders():
+        """Sort by resolution, then by seeders within each resolution."""
+        sorted_hashes_by_resolution = dict(
+            sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
+        )
+        for res, hash_list in sorted_hashes_by_resolution.items():
+            hash_list.sort(
+                key=lambda hash_key: -(
+                    int(hashes[hash_key]["data"].get("seeders", 0)) if hashes[hash_key]["data"].get(
+                        "seeders") != "?" else 0
+                )
+            )
+        return sort_uncached_by_seeders(sorted_hashes_by_resolution)
+
+    def sort_by_resolution_then_size():
+        """Sort by resolution, then by file size within each resolution."""
+        sorted_hashes_by_resolution = dict(
+            sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
+        )
+        for res, hash_list in sorted_hashes_by_resolution.items():
+            hash_list.sort(
+                key=lambda hash_key: -hashes[hash_key]["data"].get("size", 0)
+            )
+        return sort_uncached_by_seeders(sorted_hashes_by_resolution)
+
+    def sort_uncached_by_seeders(sorted_hashes_by_resolution: dict):
+        """Sort Uncached, if Uncached Key exists, by seeders."""
+        if "Uncached" in sorted_hashes_by_resolution:
+            sorted_hashes_by_resolution["Uncached"].sort(
+                key=lambda hash_key: -(
+                    int(hashes[hash_key]["data"].get("seeders", 0)) if hashes[hash_key]["data"].get(
+                        "seeders") != "?" else 0
+                )
+            )
+        return sorted_hashes_by_resolution
+
+    def prioritize_languages(sorted_hashes_by_resolution: dict):
+        """Prioritize torrents by languages according to config_languages_priority."""
+        for res, hash_list in sorted_hashes_by_resolution.items():
+            prioritized = []
+            non_prioritized = []
+            for hash_key in hash_list:
+                if any(lang in hashes[hash_key]["data"].get("language", []) for lang in config_languages_preference):
+                    prioritized.append(hash_key)
+                else:
+                    non_prioritized.append(hash_key)
+
+            # Sort the prioritized list by the language priority order
+            prioritized.sort(key=sort_by_priority_language)
+
+            # Merge the prioritized and non-prioritized lists, keeping the relative order intact
+            sorted_hashes_by_resolution[res] = prioritized + non_prioritized
+        return sorted_hashes_by_resolution
+
+    # If no resolution order is provided, use default.
+    if not config_resolutions_order:
+        config_resolutions_order = [
+            "4K",
+            "2160p",
+            "1440p",
+            "1080p",
+            "720p",
+            "576p",
+            "480p",
+            "360p",
+            "Uncached",
+            "Unknown",
+        ]
+    if sort_type == "Sort_by_Rank":
+        sorted_hashes_by_resolution = hashes_by_resolution
+    elif sort_type == "Sort_by_Resolution":
+        sorted_hashes_by_resolution = sort_by_resolution_only()
+    elif sort_type == "Sort_by_Resolution_then_Seeders":
+        sorted_hashes_by_resolution = sort_by_resolution_then_seeders()
+    elif sort_type == "Sort_by_Resolution_then_Size":
+        sorted_hashes_by_resolution = sort_by_resolution_then_size()
+    else:
+        logger.warning(
+            f"Invalid sort type, results will be sorted by rank"
+        )
+        sorted_hashes_by_resolution = hashes_by_resolution
+        # Apply language prioritization after the main sorting.
+    if config_languages_preference:
+        logger.info(f"Sorting results by language Preference {config_languages_preference}")
+        sorted_hashes_by_resolution = prioritize_languages(sorted_hashes_by_resolution)
+    return sorted_hashes_by_resolution
 
 def format_metadata(data: dict):
     extras = []
@@ -600,7 +764,10 @@ def format_title(data: dict, config: dict):
         title += f"🔎 {data['tracker'] if 'tracker' in data else '?'}"
     if "Uncached" in config["resultFormat"] or "All" in config["resultFormat"]:
         if data.get("uncached", False):
-            title += f"⚠️ Uncached"
+            title += "\n" + f"⚠️ Uncached"
+    if "Seeders" in config["resultFormat"] or "All" in config["resultFormat"] or data.get("uncached", True):
+        if data.get('seeders') is not None and data.get('seeders') != '?':
+            title += f"🌱 {data.get('seeders')} Seeders"
     if "Languages" in config["resultFormat"] or "All" in config["resultFormat"]:
         languages = data["language"]
         formatted_languages = (

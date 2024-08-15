@@ -1,3 +1,4 @@
+1.0
 - Added Sorting of Results by Resolution + WebUi
 - Added a Max Uncached Option to limit those results + WebUi
 - Added a WebUi for which indexers to consider for uncached results
@@ -6,8 +7,16 @@
 - Modified Real Debrid to handle uncached files
 	- Added DB Table to cache uncached files + cleanup
 
+2.0
+- If max uncached specified keeps only the ones with most seeders
+- Option to show Seeders in the title (Seeders are always shown for uncached results)
+- Refactored logic to add uncached files into a more general function
+- Added Sorting, ["Sort_by_Rank" (Default), "Sort_by_Resolution", "Sort_by_Resolution_then_Seeders", "Sort_by_Resolution_then_Size"]
+- Added language Preferences
+
 Still need to do:
 - Check other indexer, what if a magneturi is provided and a link for private indexers?
-- Check FileResponse, cause not working on localhost
+- Check FileResponse, cause not working on localhost (Seems like vlc/stremio app cant handel fileresponse as it causes multiple redirects, works in stremio browser tho)
 - Check if works with zilean and torrentio
 - Check prowlarr, as some private trackers on prowlarr return no infoHash, even tho Jackett does
+- Check Language Prioritization especially with sort by rank (is kinda sus)

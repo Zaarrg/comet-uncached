@@ -22,7 +22,7 @@ from comet.utils.general import (
     get_torrent_hash,
     translate,
     get_balanced_hashes,
-    format_title
+    format_title, add_uncached_files
 )
 from comet.utils.logger import logger
 from comet.utils.models import database, rtn, settings
@@ -300,58 +300,10 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             kitsu,
         )
 
-        # Find the highest existing index in files dict
-        max_index = max(
-            (int(files[key]["index"]) for key in files if files[key]["index"] is not None), default=0
-        )
-        # Create a set of all existing info_hashes in the files dict for faster lookup
-        cached_info_hashes = set(files.keys())
-        # Prepare a list for batch database insertion
-        uncached_torrents = []
+        # Adds Uncached Files to files, based on config and cached results
         allowed_tracker_ids = config.get('indexersUncached', [])
-        # Adding missing torrents to the files dict based on config
         if allowed_tracker_ids:
-            for torrent in torrents:
-                tracker = ""
-                if settings.INDEXER_MANAGER_TYPE == 'prowlarr':
-                    tracker = torrent.get("Tracker", "").lower()
-                else:
-                    tracker = torrent.get("TrackerId", "").lower()
-                allowed_tracker_ids = [tracker_id.lower() for tracker_id in allowed_tracker_ids]
-                if tracker in allowed_tracker_ids:
-                    info_hash = torrent["InfoHash"]
-                    if info_hash not in cached_info_hashes:
-                        max_index += 1
-                        # Adding uncached Torrents to all found cached files
-                        torrent_data = {
-                            "index": str(max_index),
-                            "title": torrent["Title"],
-                            "size": torrent["Size"],
-                            "uncached": True,
-                            "link": torrent["Link"],
-                        }
-                        files[info_hash] = torrent_data
-
-                        # Add to the batch list for database insertion
-                        uncached_torrents.append({
-                            "hash": info_hash,
-                            "torrentId": "",
-                            "data": json.dumps(torrent_data),
-                            "cacheKey": cache_key
-                        })
-
-            # Perform batch insert of uncached torrents into the database
-            if uncached_torrents:
-                await database.execute_many(
-                    "INSERT OR REPLACE INTO uncached_torrents (hash, torrentId, data, cacheKey) VALUES (:hash, :torrentId, :data, :cacheKey)",
-                    uncached_torrents
-                )
-            length_uncached = sum(
-                1 for file in files.values() if file.get("uncached", False)
-            )
-            logger.info(
-                f"{length_uncached} uncached files found on {allowed_tracker_ids} for {log_name}"
-            )
+            await add_uncached_files(files, torrents, cache_key, log_name, allowed_tracker_ids, config, database)
 
         ranked_files = set()
         for hash in files:
@@ -381,19 +333,12 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         torrents_by_hash = {torrent["InfoHash"]: torrent for torrent in torrents}
         for hash in sorted_ranked_files:  # needed for caching
             sorted_ranked_files[hash]["data"]["title"] = files[hash]["title"]
-            sorted_ranked_files[hash]["data"]["torrent_title"] = torrents_by_hash[hash][
-                "Title"
-            ]
-            sorted_ranked_files[hash]["data"]["tracker"] = torrents_by_hash[hash][
-                "Tracker"
-            ]
+            sorted_ranked_files[hash]["data"]["torrent_title"] = torrents_by_hash[hash]["Title"]
+            sorted_ranked_files[hash]["data"]["tracker"] = torrents_by_hash[hash]["Tracker"]
             sorted_ranked_files[hash]["data"]["size"] = files[hash]["size"]
-            sorted_ranked_files[hash]["data"]["torrent_size"] = torrents_by_hash[hash][
-                "Size"
-            ]
-            sorted_ranked_files[hash]["data"]["uncached"] = files[hash][
-                "uncached"
-            ]
+            sorted_ranked_files[hash]["data"]["torrent_size"] = torrents_by_hash[hash]["Size"]
+            sorted_ranked_files[hash]["data"]["uncached"] = files[hash]["uncached"]
+            sorted_ranked_files[hash]["data"]["seeders"] = torrents_by_hash[hash].get("Seeders", "?")
             sorted_ranked_files[hash]["data"]["index"] = files[hash]["index"]
 
         json_data = json.dumps(sorted_ranked_files).replace("'", "''")
