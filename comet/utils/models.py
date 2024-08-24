@@ -45,9 +45,9 @@ class ConfigModel(BaseModel):
     resolutions: Optional[List[str]] = ["All"]
     resultFormat: Optional[List[str]] = ["All"]
     resolutionsOrder: Optional[List[str]] = []
-    enhancedLanguageMatching: str = 'False'
-    sortType: str
-    scrapingPreference: str
+    enhancedLanguageMatching: Optional[str] = 'False'
+    sortType: Optional[str] = 'Sort_by_Rank'
+    scrapingPreference: Optional[str] = 'tz'
     maxResults: Optional[int] = 0
     maxSize: Optional[float] = 0
     debridService: str
