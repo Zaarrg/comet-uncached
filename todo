@@ -14,9 +14,24 @@
 - Added Sorting, ["Sort_by_Rank" (Default), "Sort_by_Resolution", "Sort_by_Resolution_then_Seeders", "Sort_by_Resolution_then_Size"]
 - Added language Preferences
 
+3.0
+- Generalized getting uncached torrents
+- Optimized sorting of torrents
+- Optimized add_uncached_files to be only one loop
+- Removed unnecessary max_uncached value, as max_results already does that
+- Uncached torrents with magnet will use that instead of always downloading the file
+- Early return for uncached results to prevent unnecessary debrid api calls
+- Warning if debrid selecting files fails because of invalid video format
+- Changed Uncached torrents index logic as it was completely wrong
+- Added User Option to toggle torrentio and zilean search, useful if server supports those but only wants a select few indexers
+- Added Option for additional Search Languages. Gets the available titles from imdb.
+- Added Custom (Enhanced) Language Matching option. Rtn does not really return all languages in a title causing the language preference to be useless, this trys to enhance that.
+- Adjusted Title Matching Filter to make sure the title name does not have multiple titles causing a false result
+- Added ability to customize the order of Title Format, Result Order and Language Preference in web ui depending on what is selected first
+- Replaced FileResponse with custom redirect to custom assets endpoint. Allows for range headers for stremio app and for redirect away from playback endpoint preventing necessary function calls
+
+
 Still need to do:
-- Check other indexer, what if a magneturi is provided and a link for private indexers?
-- Check FileResponse, cause not working on localhost (Seems like vlc/stremio app cant handel fileresponse as it causes multiple redirects, works in stremio browser tho)
-- Check if works with zilean and torrentio
-- Check prowlarr, as some private trackers on prowlarr return no infoHash, even tho Jackett does
-- Check Language Prioritization especially with sort by rank (is kinda sus)
+- About FileResponse: Does not work in stremio app. Issue with headers/redirect. Works when range headers added. Issue when range headers added multiple calls of generate_download_link, fix is redirect to separate endpoint.
+- Generalize and optimize more for proper and easy support with other debrid services
+    - Maybe Generalize index assignment for uncached results

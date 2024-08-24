@@ -524,19 +524,11 @@
             </div>
 
             <div class="form-item">
-                <sl-select id="languagePreference" multiple clearable label="Language Preference" placeholder="Select languages"></sl-select>
-            </div>
-
-            <div class="form-item">
                 <sl-select id="resolutions" multiple clearable label="Resolutions" placeholder="Select resolutions"></sl-select>
             </div>
 
             <div class="form-item">
                 <sl-input id="maxResults" type="number" min=0 value=0 label="Max Results" placeholder="Enter max results"></sl-input>
-            </div>
-
-            <div class="form-item">
-                <sl-input id="maxUncached" type="number" min=0 value=0 label="Max Uncached" placeholder="Enter max uncached results"></sl-input>
             </div>
 
             <div class="form-item">
@@ -567,15 +559,36 @@
 
             <sl-details summary="Advanced Settings">
                 <div class="form-item">
-                    <sl-select id="resultFormat" multiple label="Result Format" placeholder="Select what to show in result title" hoist max-options-visible=10>
+                    <sl-select id="resultFormat" multiple clearable label="Result Format" placeholder="Select what to show in result title" hoist max-options-visible=10>
                     </sl-select>
                 </div>
                 <div class="form-item">
-                    <sl-select id="resolutionsOrder" multiple label="Result Order" help-text="Works only if sorting by Resolution." placeholder="Select what order to show" hoist max-options-visible=10>
+                    <sl-select id="resolutionsOrder" clearable multiple label="Result Order" help-text="Works only if sorting by Resolution." placeholder="Select what order to show" hoist max-options-visible=10>
+                    </sl-select>
+                </div>
+                <div class="form-item">
+                    <sl-select id="languagePreference" help-text="Does not work with Sort by Rank" multiple clearable label="Language Preference" hoist placeholder="Select languages to show at the top"></sl-select>
+                </div>
+                <div class="form-item">
+                    <sl-select id="searchLanguage" multiple label="Language Search" placeholder="Select additional languages to be searched in" hoist clearable max-options-visible=10>
+                    </sl-select>
+                </div>
+                <div class="form-item">
+                    <sl-select id="enhancedLanguageMatching" label="Enhanced Language Matching" help-text="Uses custom function on top of rtn to get more languages out of titles for even better language sorting" hoist value="False">
+                        <sl-option value="True">Enabled</sl-option>
+                        <sl-option value="False">Disabled</sl-option>
                     </sl-select>
                 </div>
                 <div class="form-item">
                     <sl-select id="sortType" label="Result Sorting" hoist value="Sort_by_Rank"></sl-select>
+                </div>
+                <div class="form-item">
+                    <sl-radio-group  id="scrapingPreference" label="Scraping Preference" hoist value="tz">
+                        <sl-radio-button value="tz">Enable Torrentio & Zilean</sl-radio-button>
+                        <sl-radio-button value="t">Enable Torrentio</sl-radio-button>
+                        <sl-radio-button value="z">Enable Zilean</sl-radio-button>
+                        <sl-radio-button value="">Disabled</sl-radio-button>
+                    </sl-radio-group>
                 </div>
             </sl-details>
 
@@ -623,7 +636,7 @@
                             customElements.whenDefined("sl-select"),
                             customElements.whenDefined("sl-input"),
                             customElements.whenDefined("sl-option"),
-                            customElements.whenDefined("sl-icon")
+                            customElements.whenDefined("sl-icon"),
                         ]);
 
                         const webConfig = {{webConfig|tojson}};
@@ -635,9 +648,14 @@
                         populateSelect("resolutionsOrder", webConfig.resultOrder);
                         populateSelect("sortType", webConfig.sortType);
                         populateSelect("languagePreference", webConfig.languagePreference)
-                        //Set Default for languagePreference
+                        populateSelect("searchLanguage", webConfig.searchLanguage)
+                        //Set Default for languagePreference, searchLanguage
                         const languagePrefElement = document.getElementById("languagePreference")
                         languagePrefElement.value = ""
+                        const searchPrefElement = document.getElementById("searchLanguage")
+                        searchPrefElement.value = ""
+                        const uncachedPrefElement = document.getElementById("indexersUncached")
+                        uncachedPrefElement.value = ""
                         document.body.classList.add("ready");
                         defaultLanguages = webConfig.languages;
                         defaultResolutions = webConfig.resolutions;
@@ -651,7 +669,54 @@
                             console.log("Failed to retrieve or parse settings from URL:", error);
                         }
 
+                        setupOrderedMultiSelect("resolutionsOrder");
+                        setupOrderedMultiSelect("resultFormat");
+                        setupOrderedMultiSelect("languagePreference");
+                        document.body.classList.add("ready");
+
                     });
+
+                    function setupOrderedMultiSelect(selectId) {
+                        const select = document.getElementById(selectId);
+                        let selectedValues = [];
+
+                        select.addEventListener('sl-change', (event) => {
+                            const newValue = event.target.value;
+
+                            // Remove deselected values
+                            selectedValues = selectedValues.filter(value => newValue.includes(value));
+
+                            // Add newly selected values
+                            newValue.forEach(value => {
+                                if (!selectedValues.includes(value)) {
+                                    selectedValues.push(value);
+                                }
+                            });
+
+                            updateDisplayOrder(select, selectedValues);
+                        });
+                    }
+
+                    function updateDisplayOrder(select, selectedValues) {
+                        const options = Array.from(select.querySelectorAll('sl-option'));
+
+                        // Sort options based on selectedValues order
+                        options.sort((a, b) => {
+                            const indexA = selectedValues.indexOf(a.value);
+                            const indexB = selectedValues.indexOf(b.value);
+
+                            if (indexA === -1 && indexB === -1) return 0;
+                            if (indexA === -1) return 1;
+                            if (indexB === -1) return -1;
+                            return indexA - indexB;
+                        });
+
+                        // Reappend options in the new order
+                        options.forEach(option => select.appendChild(option));
+
+                        // Force update of sl-select display
+                        select.requestUpdate();
+                    }
 
                     function populateSelect(selectId, options) {
                         const selectElement = document.getElementById(selectId);
@@ -674,15 +739,17 @@
                         const indexersUncached = Array.from(document.getElementById("indexersUncached").selectedOptions).map(option => option.value);
                         const languages = Array.from(document.getElementById("languages").selectedOptions).map(option => option.value);
                         const languagePreference = Array.from(document.getElementById("languagePreference").selectedOptions).map(option => option.value);
+                        const searchLanguage = Array.from(document.getElementById("searchLanguage").selectedOptions).map(option => option.value);
                         const resolutions = Array.from(document.getElementById("resolutions").selectedOptions).map(option => option.value);
                         const maxResults = document.getElementById("maxResults").value;
-                        const maxUncached = document.getElementById("maxUncached").value;
                         const maxSize = document.getElementById("maxSize").value;
                         const resultFormat = Array.from(document.getElementById("resultFormat").selectedOptions).map(option => option.value);
                         const resolutionsOrder = Array.from(document.getElementById("resolutionsOrder").selectedOptions).map(option => option.value);
                         const sortType = document.getElementById("sortType").value;
+                        const scrapingPreference = document.getElementById("scrapingPreference").value;
                         const debridService = document.getElementById("debridService").value;
                         const debridApiKey = document.getElementById("debridApiKey").value;
+                        const enhancedLanguageMatching = document.getElementById("enhancedLanguageMatching").value;
                         const debridStreamProxyPassword = document.getElementById("debridStreamProxyPassword").value;
                         const selectedLanguages = languages.length === defaultLanguages.length && languages.every((val, index) => val === defaultLanguages[index]) ? ["All"] : languages;
                         const selectedResolutions = resolutions.length === defaultResolutions.length && resolutions.every((val, index) => val === defaultResolutions[index]) ? ["All"] : resolutions;
@@ -692,14 +759,16 @@
                             indexers: indexers,
                             indexersUncached: indexersUncached,
                             maxResults: parseInt(maxResults),
-                            maxUncached: maxUncached,
                             maxSize: parseFloat(maxSize * 1073741824),
                             resultFormat: selectedResultFormat,
                             resolutions: selectedResolutions,
                             resolutionsOrder: resolutionsOrder,
                             sortType: sortType,
+                            scrapingPreference: scrapingPreference,
                             languages: selectedLanguages,
                             languagePreference: languagePreference,
+                            enhancedLanguageMatching: enhancedLanguageMatching,
+                            searchLanguage: searchLanguage,
                             debridService: debridService,
                             debridApiKey: debridApiKey,
                             debridStreamProxyPassword: debridStreamProxyPassword,
@@ -748,22 +817,43 @@
 
                     function populateFormFromSettings(settings) {
                         document.getElementById("maxResults").value = settings.maxResults;
-                        document.getElementById("maxUncached").value = settings.maxUncached;
                         document.getElementById("maxSize").value = settings.maxSize / 1073741824; // Convert back from bytes to GB
                         document.getElementById("debridService").value = settings.debridService;
                         document.getElementById("debridApiKey").value = settings.debridApiKey;
                         document.getElementById("debridStreamProxyPassword").value = settings.debridStreamProxyPassword;
                         document.getElementById("indexers").value = settings.indexers;
                         document.getElementById("indexersUncached").value = settings.indexersUncached;
-                        document.getElementById("resolutionsOrder").value = settings.resolutionsOrder;
+                        setOrderedMultiSelectValue("resolutionsOrder", settings.resolutionsOrder);
                         document.getElementById("sortType").value = settings.sortType;
+                        document.getElementById("scrapingPreference").value = settings.scrapingPreference;
                         document.getElementById("languagePreference").value = settings.languagePreference;
+                        document.getElementById("enhancedLanguageMatching").value = settings.enhancedLanguageMatching;
+                        document.getElementById("searchLanguage").value = settings.searchLanguage;
                         if (settings.languages != "All")
                             document.getElementById("languages").value = settings.languages;
                         if (settings.resolutions != "All")
                             document.getElementById("resolutions").value = settings.resolutions;
                         if (settings.resultFormat != "All")
-                            document.getElementById("resultFormat").value = settings.resultFormat;
+                            setOrderedMultiSelectValue("resultFormat", settings.resultFormat);
+                    }
+
+                    function setOrderedMultiSelectValue(selectId, values) {
+                        const select = document.getElementById(selectId);
+                        const options = Array.from(select.querySelectorAll('sl-option'));
+
+                        // Deselect all options first
+                        options.forEach(option => option.selected = false);
+
+                        // Select options in the order specified by values
+                        values.forEach(value => {
+                            const option = options.find(opt => opt.value === value);
+                            if (option) {
+                                option.selected = true;
+                            }
+                        });
+
+                        // Update the display order
+                        updateDisplayOrder(select, values);
                     }
 
                 </script>

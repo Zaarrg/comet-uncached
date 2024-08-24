@@ -32,6 +32,11 @@ web_config = {
         language.replace(" ", "_")
         for language in RTN.patterns.language_code_mapping.keys()
     ],
+    "searchLanguage": [
+        language.replace(" ", "_")
+        for language in RTN.patterns.language_code_mapping.keys()
+        if language.lower() not in ["multi subs", "multi audio", "dual audio"]
+    ],
     "resolutions": [
         "360p",
         "480p",

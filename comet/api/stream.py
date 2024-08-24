@@ -2,17 +2,18 @@ import asyncio
 import hashlib
 import json
 import time
+import RTN.patterns
 import aiohttp
 import httpx
+import os
 
-from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse, StreamingResponse, FileResponse
+from fastapi import APIRouter, Request, Header
+from fastapi.responses import RedirectResponse, StreamingResponse
 from starlette.background import BackgroundTask
 from RTN import Torrent, sort_torrents
 
 from comet.debrid.manager import getDebrid
 from comet.utils.general import (
-    get_language_emoji,
     config_check,
     get_debrid_extension,
     get_indexer_manager,
@@ -22,7 +23,7 @@ from comet.utils.general import (
     get_torrent_hash,
     translate,
     get_balanced_hashes,
-    format_title, add_uncached_files
+    format_title, add_uncached_files, get_localized_titles, enhance_languages
 )
 from comet.utils.logger import logger
 from comet.utils.models import database, rtn, settings
@@ -75,6 +76,11 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 name = metadata["d"][
                     0 if metadata["d"][0]["l"] != "Summer Watch Guide" else 1
                 ]["l"]
+                titles_per_language = {}
+                if config.get('searchLanguage') and config['searchLanguage']:
+                    language_codes = list(RTN.patterns.get_language_codes(config['searchLanguage']).values())
+                    titles_per_language = await get_localized_titles(language_codes, id, session)
+                titles_per_language['imdb'] = name
         except Exception as e:
             logger.warning(f"Exception while getting metadata for {id}: {e}")
 
@@ -88,16 +94,19 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 ]
             }
 
-        name = translate(name)
-        log_name = name
+        titles_per_language = {lang: translate(name) for lang, name in titles_per_language.items()}
+        titles_per_language_list = list(set(titles_per_language.values()))
+
+        name_imdb = titles_per_language.get('imdb')
+        log_name = name_imdb
         if type == "series":
-            log_name = f"{name} S0{season}E0{episode}"
+            log_name = f"{name_imdb} S0{season}E0{episode}"
 
         cache_key = hashlib.md5(
             json.dumps(
                 {
                     "debridService": config["debridService"],
-                    "name": name,
+                    "name": name_imdb,
                     "season": season,
                     "episode": episode,
                     "indexers": config["indexers"],
@@ -207,17 +216,21 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         search_indexer = len(config["indexers"]) != 0
         torrents = []
         tasks = []
+        logger.info(
+            f"Titles gathered for searching {titles_per_language}"
+        )
         if search_indexer:
             logger.info(
                 f"Start of {indexer_manager_type} search for {log_name} with indexers {config['indexers']}"
             )
 
-            search_terms = [name]
+            search_terms = titles_per_language_list
             if type == "series":
-                if not kitsu:
-                    search_terms.append(f"{name} S0{season}E0{episode}")
-                else:
-                    search_terms.append(f"{name} {episode}")
+                for titles in titles_per_language_list:
+                    if not kitsu:
+                        search_terms.append(f"{titles} S0{season}E0{episode}")
+                    else:
+                        search_terms.append(f"{titles} {episode}")
             tasks.extend(
                 get_indexer_manager(
                     session, indexer_manager_type, config["indexers"], term
@@ -227,10 +240,13 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         else:
             logger.info(f"No indexer selected by user for {log_name}")
 
-        if settings.ZILEAN_URL:
-            tasks.append(get_zilean(session, name, log_name, season, episode))
+        if settings.ZILEAN_URL and 'z' in config["scrapingPreference"]:
+            tasks.extend(
+                get_zilean(session, titles, log_name, season, episode)
+                for titles in titles_per_language_list
+            )
 
-        if settings.SCRAPE_TORRENTIO:
+        if settings.SCRAPE_TORRENTIO and 't' in config["scrapingPreference"]:
             tasks.append(get_torrentio(log_name, type, full_id))
 
         search_response = await asyncio.gather(*tasks)
@@ -255,7 +271,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
 
             tasks = []
             for chunk in chunks:
-                tasks.append(filter(chunk, name))
+                tasks.append(filter(chunk, titles_per_language_list))
 
             filtered_torrents = await asyncio.gather(*tasks)
             index_less = 0
@@ -303,7 +319,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         # Adds Uncached Files to files, based on config and cached results
         allowed_tracker_ids = config.get('indexersUncached', [])
         if allowed_tracker_ids:
-            await add_uncached_files(files, torrents, cache_key, log_name, allowed_tracker_ids, config, database)
+            await add_uncached_files(files, torrents, cache_key, log_name, allowed_tracker_ids, database)
 
         ranked_files = set()
         for hash in files:
@@ -319,10 +335,6 @@ async def stream(request: Request, b64config: str, type: str, id: str):
 
         sorted_ranked_files = sort_torrents(ranked_files)
 
-        logger.info(
-            f"{len(sorted_ranked_files)} cached files found on {config['debridService']} for {log_name}"
-        )
-
         if len(sorted_ranked_files) == 0:
             return {"streams": []}
 
@@ -330,6 +342,18 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             key: (value.model_dump() if isinstance(value, Torrent) else value)
             for key, value in sorted_ranked_files.items()
         }
+
+        if config['enhancedLanguageMatching'] == 'True':
+            logger.info(
+                f"Running enhanced Language Title Matching"
+            )
+            for hash in sorted_ranked_files:
+                sorted_ranked_files[hash] = enhance_languages(sorted_ranked_files[hash])
+
+        logger.info(
+            f"{len(sorted_ranked_files)} cached files found on {config['debridService']} for {log_name}"
+        )
+
         torrents_by_hash = {torrent["InfoHash"]: torrent for torrent in torrents}
         for hash in sorted_ranked_files:  # needed for caching
             sorted_ranked_files[hash]["data"]["title"] = files[hash]["title"]
@@ -393,8 +417,9 @@ async def playback(b64config: str, hash: str, index: str):
 @streams.get("/{b64config}/playback/{hash}/{index}")
 async def playback(request: Request, b64config: str, hash: str, index: str):
     config = config_check(b64config)
+    base_url = str(request.base_url)
     if not config:
-        return FileResponse("comet/assets/invalidconfig.mp4")
+        return RedirectResponse(f"{base_url}assets/invalidconfig.mp4", status_code=302)
 
     async with aiohttp.ClientSession() as session:
         # Check for cached download link
@@ -418,35 +443,15 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
 
         if not download_link:
             debrid = getDebrid(session, config)
-            # Fetch uncached torrent data from the database
-            uncached_torrent = await database.fetch_one(
-                "SELECT data, torrentId  FROM uncached_torrents WHERE hash = :hash",
-                {"hash": hash}
-            )
-
-            torrent_id = ""
-            if uncached_torrent:
-                torrent_data = json.loads(uncached_torrent["data"])
-                torrent_link = torrent_data.get("link")
-                # Retrieve torrentId to prevent multi uploads of same file
-                torrent_id = uncached_torrent["torrentId"]
-                index = torrent_data.get("index", index)
-            else:
-                torrent_link = None
-
-            if config["debridService"] == 'realdebrid':
-                download_link = await debrid.generate_download_link(hash, index, torrent_link, torrent_id)
-            else:
-                download_link = await debrid.generate_download_link(hash, index)
+            download_link = await debrid.generate_download_link(hash, index)
 
             if not download_link:
-                return FileResponse("comet/assets/uncached.mp4")
-            # Cleanup uncached Torrent from db
-            if uncached_torrent:
-                await database.execute(
-                    "DELETE FROM uncached_torrents WHERE hash = :hash",
-                    {"hash": hash}
-                )
+                return RedirectResponse(f"{base_url}assets/uncached.mp4", status_code=302)
+            # Cleanup uncached Torrent from db if possible
+            await database.execute(
+                "DELETE FROM uncached_torrents WHERE hash = :hash",
+                {"hash": hash}
+            )
             # Cache the new download link
             await database.execute(
                 "INSERT OR REPLACE INTO download_links (debrid_key, hash, `index`, link, timestamp) VALUES (:debrid_key, :hash, :index, :link, :timestamp)",
@@ -510,6 +515,41 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
                     background=BackgroundTask(streamer.close),
                 )
 
-            return FileResponse("comet/assets/uncached.mp4")
+            return RedirectResponse(f"{base_url}assets/uncached.mp4", status_code=302)
 
         return RedirectResponse(download_link, status_code=302)
+
+
+@streams.get("/assets/{filename}")
+async def stream_file(filename: str, range: str = Header(None)):
+    async def file_response(file_path: str, range_header: str = None):
+        file_size = os.path.getsize(file_path)
+        start = 0
+        end = file_size - 1
+
+        if range_header:
+            start, end = range_header.replace("bytes=", "").split("-")
+            start = int(start)
+            end = int(end) if end else file_size - 1
+
+        chunk_size = 1024 * 1024  # 1MB chunks
+        headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Type": "video/mp4",
+            "Content-Length": str(end - start + 1),
+        }
+
+        async def file_iterator():
+            with open(file_path, "rb") as video:
+                video.seek(start)
+                while True:
+                    chunk = video.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+
+        return StreamingResponse(file_iterator(), status_code=206 if range_header else 200, headers=headers)
+
+    file_path = f"comet/assets/{filename}"
+    return await file_response(file_path, range)

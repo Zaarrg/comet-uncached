@@ -3,7 +3,7 @@ import asyncio
 
 from RTN import parse
 
-from comet.utils.general import is_video
+from comet.utils.general import is_video, check_uncached
 from comet.utils.logger import logger
 from comet.utils.models import settings, database
 
@@ -116,7 +116,7 @@ class RealDebrid:
 
         return files
 
-    async def generate_download_link(self, hash: str, index: str, torrent_link: str = None, possible_torrent_id: str = None):
+    async def generate_download_link(self, hash: str, index: str):
         try:
             check_blacklisted = await self.session.get("https://real-debrid.com/vpn")
             check_blacklisted = await check_blacklisted.text()
@@ -133,13 +133,14 @@ class RealDebrid:
                     logger.warning(
                         f"Real-Debrid blacklisted server's IP. Switching to proxy {self.proxy} for {hash}|{index}"
                     )
+            # Check if torrent Uncached
+            torrent_id, torrent_link, cached_index, has_magnet = await check_uncached(hash)
 
-            if possible_torrent_id:
-                # Use the provided torrentId to prevent caching multiple times
-                torrent_id = possible_torrent_id
-            elif torrent_link:
-                # If torrent_link is provided, handle the torrent file upload
+            if torrent_link and not torrent_id and not has_magnet:
+                # Download uncached torrent if it has only a link and no magnet
                 async with self.session.get(torrent_link) as resp:
+                    if resp.status != 200:
+                        raise Exception(f"Failed to download torrent, please try another one, status code: {resp.status}")
                     torrent_data = await resp.read()
 
                 add_torrent = await self.session.put(
@@ -151,12 +152,12 @@ class RealDebrid:
                 add_torrent = await add_torrent.json()
 
                 torrent_id = add_torrent.get("id")
+                if not torrent_id:
+                    raise Exception(f"Failed to get magnet ID from Real-Debrid: {add_torrent}")
                 logger.info(
                     f"Started caching to Real-Debrid this might take some time: {add_torrent}"
                 )
-                if not torrent_id:
-                    raise Exception(f"Failed to get torrent ID from Real-Debrid: {add_torrent}")
-            else:
+            elif not torrent_id:
                 # Handle magnet link as before
                 add_magnet = await self.session.post(
                     f"{self.api_url}/torrents/addMagnet",
@@ -187,6 +188,13 @@ class RealDebrid:
                 )
                 return None
 
+            # Return early if already downloading
+            if get_magnet_info.get("status") == 'downloading' or get_magnet_info.get("status") == 'queued':
+                logger.info(
+                    f"File {hash}|{index} is still uncached, please wait until its cached! Status: {get_magnet_info.get('status')} | Progress: {get_magnet_info.get('progress')}"
+                )
+                return None
+
             # Select the files for downloading
             await self.session.post(
                 f"{self.api_url}/torrents/selectFiles/{torrent_id}",
@@ -207,12 +215,25 @@ class RealDebrid:
             )
             get_magnet_info = await get_magnet_info.json()
 
-            # Update the database with the retrieved torrent_id
-            if torrent_link:
-                await database.execute(
-                    "UPDATE uncached_torrents SET torrentId = :torrent_id WHERE hash = :hash",
-                    {"torrent_id": torrent_id, "hash": hash}
+            # Warn if after selecting still nothing selected
+            if get_magnet_info.get("status") == "waiting_files_selection":
+                logger.warning(
+                    f"Exception while selecting files, please visit debrid and select them manually for {hash}|{index}"
                 )
+
+            # Update the database with torrent_id and selected index
+            if torrent_link:
+                largest_file = max(
+                    (file for file in get_magnet_info["files"] if file["selected"] == 1),
+                    key=lambda x: x["bytes"],
+                    default={"id": 1}
+                )
+                index = largest_file["id"]
+                await database.execute(
+                    "UPDATE uncached_torrents SET torrentId = :torrent_id, data = json_set(data, '$.index', :index) WHERE hash = :hash",
+                    {"torrent_id": torrent_id, "index": index, "hash": hash}
+                )
+
             index = int(index)
             realIndex = index
             for file in get_magnet_info["files"]:

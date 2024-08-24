@@ -41,12 +41,14 @@ class ConfigModel(BaseModel):
     indexersUncached: List[str]
     languages: Optional[List[str]] = ["All"]
     languagePreference: Optional[List[str]] = []
+    searchLanguage: Optional[List[str]] = []
     resolutions: Optional[List[str]] = ["All"]
     resultFormat: Optional[List[str]] = ["All"]
     resolutionsOrder: Optional[List[str]] = []
+    enhancedLanguageMatching: str = 'False'
     sortType: str
+    scrapingPreference: str
     maxResults: Optional[int] = 0
-    maxUncached: Optional[int] = 0
     maxSize: Optional[float] = 0
     debridService: str
     debridApiKey: str
@@ -81,12 +83,6 @@ class ConfigModel(BaseModel):
         #         f"At least one indexer must be from {settings.INDEXER_MANAGER_INDEXERS}"
         #     )
         return valid_indexers
-
-    @field_validator("maxUncached")
-    def check_max_results(cls, v):
-        if v < 0:
-            v = 0
-        return v
 
     @field_validator("maxResults")
     def check_max_results(cls, v):

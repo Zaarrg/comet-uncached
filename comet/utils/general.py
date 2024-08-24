@@ -5,12 +5,13 @@ import re
 import aiohttp
 import bencodepy
 
-from RTN import parse, title_match
+from RTN import parse, title_match, Torrent
+from aiohttp import ClientSession
 from curl_cffi import requests
 from databases import Database
 
 from comet.utils.logger import logger
-from comet.utils.models import settings, ConfigModel
+from comet.utils.models import settings, ConfigModel, database
 
 languages_emojis = {
     "multi_subs": "🌐",
@@ -229,6 +230,84 @@ def is_video(title: str):
     )
 
 
+lang_map = {
+    'eng': 'en', 'en': 'en', 'english': 'en',
+    'spa': 'es', 'es': 'es', 'spanish': 'es',
+    'fre': 'fr', 'fra': 'fr', 'fr': 'fr', 'french': 'fr',
+    'ger': 'de', 'deu': 'de', 'de': 'de', 'german': 'de',
+    'ita': 'it', 'it': 'it', 'italian': 'it',
+    'por': 'pt', 'pt': 'pt', 'portuguese': 'pt',
+    'rus': 'ru', 'ru': 'ru', 'russian': 'ru',
+    'jpn': 'ja', 'jap': 'ja', 'ja': 'ja', 'japanese': 'ja',
+    'chi': 'zh', 'zho': 'zh', 'zh': 'zh', 'chinese': 'zh',
+    'kor': 'ko', 'ko': 'ko', 'korean': 'ko',
+    'hin': 'hi', 'hi': 'hi', 'hindi': 'hi',
+    'tur': 'tr', 'tr': 'tr', 'turkish': 'tr',
+    'ara': 'ar', 'ar': 'ar', 'arabic': 'ar',
+    'pol': 'pl', 'pl': 'pl', 'polish': 'pl',
+    'dut': 'nl', 'nld': 'nl', 'nl': 'nl', 'dutch': 'nl',
+    'swe': 'sv', 'sv': 'sv', 'swedish': 'sv',
+    'dan': 'da', 'da': 'da', 'danish': 'da',
+    'nor': 'no', 'no': 'no', 'norwegian': 'no',
+    'fin': 'fi', 'fi': 'fi', 'finnish': 'fi',
+    'gre': 'el', 'ell': 'el', 'el': 'el', 'greek': 'el',
+    'hun': 'hu', 'hu': 'hu', 'hungarian': 'hu',
+    'cze': 'cs', 'ces': 'cs', 'cs': 'cs', 'czech': 'cs',
+    'rom': 'ro', 'ron': 'ro', 'ro': 'ro', 'romanian': 'ro',
+    'tha': 'th', 'th': 'th', 'thai': 'th',
+    'vie': 'vi', 'vi': 'vi', 'vietnamese': 'vi',
+    'ind': 'id', 'id': 'id', 'indonesian': 'id',
+    'heb': 'he', 'he': 'he', 'hebrew': 'he',
+    'ukr': 'uk', 'uk': 'uk', 'ukrainian': 'uk',
+    'per': 'fa', 'fas': 'fa', 'fa': 'fa', 'persian': 'fa',
+    'srp': 'sr', 'sr': 'sr', 'serbian': 'sr',
+    'hrv': 'hr', 'hr': 'hr', 'croatian': 'hr',
+    'bul': 'bg', 'bg': 'bg', 'bulgarian': 'bg',
+    'slk': 'sk', 'sk': 'sk', 'slovak': 'sk',
+    'slv': 'sl', 'sl': 'sl', 'slovenian': 'sl',
+    'lit': 'lt', 'lt': 'lt', 'lithuanian': 'lt',
+    'lav': 'lv', 'lv': 'lv', 'latvian': 'lv',
+    'est': 'et', 'et': 'et', 'estonian': 'et',
+    'tam': 'ta', 'ta': 'ta', 'tamil': 'ta',
+    'tel': 'te', 'te': 'te', 'telugu': 'te',
+    'urd': 'ur', 'ur': 'ur', 'urdu': 'ur',
+    'ben': 'bn', 'bn': 'bn', 'bengali': 'bn',
+    'may': 'ms', 'msa': 'ms', 'ms': 'ms', 'malay': 'ms',
+    'fil': 'tl', 'tl': 'tl', 'filipino': 'tl', 'tagalog': 'tl'
+}
+
+code_to_full_name = {v: k for k, v in lang_map.items() if len(k) > 3}
+pattern = re.compile(r'\b(?:[A-Za-z]{2,3}|[A-Za-z]{3,})(?:[.,+&/-](?:[A-Za-z]{2,3}|[A-Za-z]{3,}))*\b', re.IGNORECASE)
+
+
+def enhance_languages(torrent: Torrent):
+    raw_title = torrent['raw_title']
+    data = torrent['data']
+    existing_lang_codes = data.get('lang_codes', {})
+
+    new_lang_codes: set[str] = set()
+    for match in pattern.finditer(raw_title):
+        for lang in re.split(r'[.,+&/-]+', match.group(0)):
+            lang_code = lang_map.get(lang.lower())
+            if lang_code:
+                new_lang_codes.add(lang_code)
+
+    all_lang_codes = set(existing_lang_codes.values()).union(new_lang_codes)
+
+    updated_lang_codes = {}
+    full_names = []
+    for code in all_lang_codes:
+        full_name = code_to_full_name.get(code, '').capitalize()
+        if full_name:
+            updated_lang_codes[full_name] = code
+            full_names.append(full_name)
+
+    data['language'] = sorted(full_names)
+    data['lang_codes'] = updated_lang_codes
+
+    return torrent
+
+
 def bytes_to_size(bytes: int):
     sizes = ["Bytes", "KB", "MB", "GB", "TB"]
     if bytes == 0:
@@ -370,10 +449,10 @@ async def get_zilean(
 
                     results.append(object)
 
-        logger.info(f"{len(results)} torrents found for {log_name} with Zilean")
+        logger.info(f"{len(results)} torrents found for {log_name} using title {name} with Zilean")
     except Exception as e:
         logger.warning(
-            f"Exception while getting torrents for {log_name} with Zilean: {e}"
+            f"Exception while getting torrents for {log_name} using title {name} with Zilean: {e}"
         )
         pass
 
@@ -420,7 +499,7 @@ async def get_torrentio(log_name: str, type: str, full_id: str):
     return results
 
 
-async def filter(torrents: list, name: str):
+async def filter(torrents: list, title_list: list):
     results = []
     for torrent in torrents:
         index = torrent[0]
@@ -428,14 +507,41 @@ async def filter(torrents: list, name: str):
 
         if "\n" in title:  # Torrentio title parsing
             title = title.split("\n")[1]
+        # Removes alternative titles that would come after a -, / or |
+        separators = r'[\/\-|]'
+        parts = re.split(separators, title)
+        title = parts[0].strip()
 
-        if title_match(name, parse(title).parsed_title):
-            results.append((index, True))
-            continue
-
-        results.append((index, False))
+        for name in title_list:
+            if title_match(name, translate(parse(title).parsed_title)):
+                results.append((index, True))
+                break
+        else:
+            results.append((index, False))
 
     return results
+
+
+async def check_uncached(hash: str):
+    # Fetch uncached torrent data from the database
+    uncached_torrent = await database.fetch_one(
+        "SELECT data, torrentId FROM uncached_torrents WHERE hash = :hash",
+        {"hash": hash}
+    )
+
+    if uncached_torrent:
+        # Extract relevant information from the uncached torrent data
+        torrent_data = json.loads(uncached_torrent["data"])
+        torrent_id = uncached_torrent["torrentId"]
+        torrent_link = torrent_data.get("link")
+        index = torrent_data.get("index")
+
+        # Check if the magnet key exists and is not empty/None
+        has_magnet = bool(torrent_data.get("magnet"))
+
+        return torrent_id, torrent_link, index, has_magnet
+    else:
+        return None, None, None, False
 
 
 async def add_uncached_files(
@@ -444,62 +550,47 @@ async def add_uncached_files(
         cache_key: str,
         log_name: str,
         allowed_tracker_ids: list,
-        config: dict,
         database: Database
 ):
-    max_index = max((int(files[key]["index"]) for key in files if files[key]["index"] is not None), default=0)
-    max_uncached = config.get("maxUncached", 0)
     tracker_key = "Tracker" if settings.INDEXER_MANAGER_TYPE == 'prowlarr' else "TrackerId"
-    allowed_tracker_ids = [tracker_id.lower() for tracker_id in allowed_tracker_ids]
-    uncached_torrent_list = []
+    allowed_tracker_ids_set = {tracker_id.lower() for tracker_id in allowed_tracker_ids}
+    found_uncached = 0
     uncached_torrents = []
 
     for torrent in torrents:
         tracker = torrent.get(tracker_key, "").lower()
-        if tracker in allowed_tracker_ids:
+        if tracker in allowed_tracker_ids_set:
             info_hash = torrent["InfoHash"]
             if info_hash not in files:
+                found_uncached += 1
                 torrent_data = {
-                    "index": str(max_index + 1),
+                    "index": 1,
                     "title": torrent["Title"],
                     "size": torrent["Size"],
                     "uncached": True,
                     "link": torrent["Link"],
+                    "magnet": torrent["MagnetUri"],
                     "seeders": torrent.get("Seeders", 0)
                 }
-                uncached_torrent_list.append((info_hash, torrent_data))
-                max_index += 1
+                # Update files and serialize data for database insertion
+                files[info_hash] = torrent_data
+                torrent_data = json.dumps(torrent_data)
+                uncached_torrents.append({
+                    "hash": info_hash,
+                    "torrentId": "",
+                    "data": torrent_data,
+                    "cacheKey": cache_key
+                })
 
-    # Sort the uncached torrents by seeders in descending order
-    uncached_torrent_list.sort(key=lambda x: x[1]["seeders"], reverse=True)
-
-    # If max_uncached is greater than 0, limit the number of uncached torrents
-    if max_uncached > 0:
-        uncached_torrent_list = uncached_torrent_list[:max_uncached]
-
-    # Add the sorted and filtered uncached torrents to the files dict
-    for info_hash, torrent_data in uncached_torrent_list:
-        files[info_hash] = torrent_data
-
-        uncached_torrents.append({
-            "hash": info_hash,
-            "torrentId": "",
-            "data": json.dumps(torrent_data),
-            "cacheKey": cache_key
-        })
-
-    # Perform batch insert of uncached torrents into the database
+    # Batch insert uncached torrents
     if uncached_torrents:
         await database.execute_many(
             "INSERT OR REPLACE INTO uncached_torrents (hash, torrentId, data, cacheKey) VALUES (:hash, :torrentId, :data, :cacheKey)",
             uncached_torrents
         )
 
-    length_uncached = sum(
-        1 for file in files.values() if file.get("uncached", False)
-    )
     logger.info(
-        f"{length_uncached} uncached files found on {allowed_tracker_ids} for {log_name}"
+        f"{found_uncached} uncached files found on {', '.join(allowed_tracker_ids)} for {log_name}"
     )
 
 
@@ -587,7 +678,13 @@ def get_balanced_hashes(hashes: dict, config: dict):
         hashes_by_resolution[resolution_key].append(hash)
 
     # Sorting
-    hashes_by_resolution = apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config_language_preference,config.get("sortType", "Sort_by_Rank"))
+    hashes_by_resolution = apply_sorting(
+        hashes_by_resolution,
+        hashes,
+        config_resolutions_order,
+        config_language_preference,
+        config.get("sortType", "Sort_by_Rank")
+    )
 
     total_resolutions = len(hashes_by_resolution)
     if max_results == 0 or total_resolutions == 0:
@@ -618,97 +715,70 @@ def get_balanced_hashes(hashes: dict, config: dict):
 
 
 def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config_languages_preference, sort_type):
-    """Apply the specified sorting function based on the sort_type string."""
+    """Apply the specified sorting function based on the sort_type string. Sorts Uncached always by seeders"""
+    # Create resolution index map for fast lookup
+    resolution_index_map = {res: i for i, res in enumerate(config_resolutions_order or [
+        "4K", "2160p", "1440p", "1080p", "720p", "576p", "480p", "360p", "Uncached", "Unknown"
+    ])}
+
+    # Only create the set if there is a language preference
+    languages_set = set(config_languages_preference) if config_languages_preference else None
+
     def sort_by_resolution(res):
         """Sort by resolution based on the config order."""
-        try:
-            return config_resolutions_order.index(res)
-        except ValueError:
-            return len(config_resolutions_order)
+        return resolution_index_map.get(res, len(config_resolutions_order))
 
     def sort_by_priority_language(hash_key):
-        """Sort by priority language based on config_languages_priority."""
+        """Sort by priority language based on config_languages_preference."""
         languages = hashes[hash_key]["data"].get("language", [])
-        for i, lang in enumerate(config_languages_preference):
-            if lang in languages:
-                return i
-        return len(config_languages_preference)
+        return next((i for i, lang in enumerate(config_languages_preference) if lang in languages), len(config_languages_preference))
+
+    def sort_uncached_by_seeders(sorted_hashes_by_resolution):
+        """Ensure Uncached, if it exists, is always sorted by seeders."""
+        if "Uncached" in sorted_hashes_by_resolution:
+            sorted_hashes_by_resolution["Uncached"].sort(
+                key=lambda hash_key: -int(hashes[hash_key]["data"].get("seeders", 0))
+            )
+        return sorted_hashes_by_resolution
 
     def sort_by_resolution_only():
-        """Sort by resolution based on the config order and sort Uncached by seeders."""
-        sorted_hashes_by_resolution = dict(
-            sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
-        )
+        """Sort by resolution based on the config order, then sort Uncached by seeders."""
+        sorted_hashes_by_resolution = {
+            k: v for k, v in sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
+        }
         return sort_uncached_by_seeders(sorted_hashes_by_resolution)
 
     def sort_by_resolution_then_seeders():
-        """Sort by resolution, then by seeders within each resolution."""
-        sorted_hashes_by_resolution = dict(
-            sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
-        )
+        """Sort by resolution, then by seeders within each resolution, and always sort Uncached by seeders."""
+        sorted_hashes_by_resolution = {
+            k: v for k, v in sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
+        }
         for res, hash_list in sorted_hashes_by_resolution.items():
-            hash_list.sort(
-                key=lambda hash_key: -(
-                    int(hashes[hash_key]["data"].get("seeders", 0)) if hashes[hash_key]["data"].get(
-                        "seeders") != "?" else 0
-                )
-            )
+            hash_list.sort(key=lambda hash_key: -int(hashes[hash_key]["data"].get("seeders", 0)))
         return sort_uncached_by_seeders(sorted_hashes_by_resolution)
 
     def sort_by_resolution_then_size():
-        """Sort by resolution, then by file size within each resolution."""
-        sorted_hashes_by_resolution = dict(
-            sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
-        )
+        """Sort by resolution, then by file size within each resolution, and always sort Uncached by seeders."""
+        sorted_hashes_by_resolution = {
+            k: v for k, v in sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
+        }
         for res, hash_list in sorted_hashes_by_resolution.items():
-            hash_list.sort(
-                key=lambda hash_key: -hashes[hash_key]["data"].get("size", 0)
-            )
+            hash_list.sort(key=lambda hash_key: -hashes[hash_key]["data"].get("size", 0))
         return sort_uncached_by_seeders(sorted_hashes_by_resolution)
 
-    def sort_uncached_by_seeders(sorted_hashes_by_resolution: dict):
-        """Sort Uncached, if Uncached Key exists, by seeders."""
-        if "Uncached" in sorted_hashes_by_resolution:
-            sorted_hashes_by_resolution["Uncached"].sort(
-                key=lambda hash_key: -(
-                    int(hashes[hash_key]["data"].get("seeders", 0)) if hashes[hash_key]["data"].get(
-                        "seeders") != "?" else 0
-                )
-            )
-        return sorted_hashes_by_resolution
+    def prioritize_languages(sorted_hashes_by_resolution):
+        """Prioritize torrents by languages according to config_languages_preference."""
+        if not languages_set:
+            return sorted_hashes_by_resolution  # No need to prioritize if there's no preference
 
-    def prioritize_languages(sorted_hashes_by_resolution: dict):
-        """Prioritize torrents by languages according to config_languages_priority."""
         for res, hash_list in sorted_hashes_by_resolution.items():
-            prioritized = []
-            non_prioritized = []
-            for hash_key in hash_list:
-                if any(lang in hashes[hash_key]["data"].get("language", []) for lang in config_languages_preference):
-                    prioritized.append(hash_key)
-                else:
-                    non_prioritized.append(hash_key)
-
-            # Sort the prioritized list by the language priority order
+            prioritized = [hash_key for hash_key in hash_list if languages_set.intersection(hashes[hash_key]["data"].get("language", []))]
+            non_prioritized = [hash_key for hash_key in hash_list if hash_key not in prioritized]
             prioritized.sort(key=sort_by_priority_language)
-
-            # Merge the prioritized and non-prioritized lists, keeping the relative order intact
             sorted_hashes_by_resolution[res] = prioritized + non_prioritized
         return sorted_hashes_by_resolution
 
-    # If no resolution order is provided, use default.
-    if not config_resolutions_order:
-        config_resolutions_order = [
-            "4K",
-            "2160p",
-            "1440p",
-            "1080p",
-            "720p",
-            "576p",
-            "480p",
-            "360p",
-            "Uncached",
-            "Unknown",
-        ]
+    # Main sorting logic
     if sort_type == "Sort_by_Rank":
         sorted_hashes_by_resolution = hashes_by_resolution
     elif sort_type == "Sort_by_Resolution":
@@ -718,15 +788,16 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
     elif sort_type == "Sort_by_Resolution_then_Size":
         sorted_hashes_by_resolution = sort_by_resolution_then_size()
     else:
-        logger.warning(
-            f"Invalid sort type, results will be sorted by rank"
-        )
+        logger.warning(f"Invalid sort type, results will be sorted by rank")
         sorted_hashes_by_resolution = hashes_by_resolution
-        # Apply language prioritization after the main sorting.
-    if config_languages_preference:
+
+    # Apply language prioritization if needed
+    if languages_set:
         logger.info(f"Sorting results by language Preference {config_languages_preference}")
         sorted_hashes_by_resolution = prioritize_languages(sorted_hashes_by_resolution)
+
     return sorted_hashes_by_resolution
+
 
 def format_metadata(data: dict):
     extras = []
@@ -747,6 +818,48 @@ def format_metadata(data: dict):
     if data["extended"]:
         extras.append("Extended")
     return " | ".join(extras)
+
+
+async def get_localized_titles(languages, id: str, session: ClientSession):
+    headers = {
+        "content-type": "application/json"
+    }
+    params = {
+        "operationName": "TitleAkasPaginated",
+        "variables": f'{{"const":"{id}","first":8000}}',
+        "extensions": '{"persistedQuery":{"sha256Hash":"48d4f7bfa73230fb550147bd4704d8050080e65fe2ad576da6276cac2330e446","version":1}}'
+    }
+    try:
+        gathered_localized_titles = await session.get(f'https://caching.graphql.imdb.com/', params=params, headers=headers)
+    except Exception as e:
+        logger.warning(
+            f"Exception while getting localized titles: {e}"
+        )
+        return []
+    localized_titles = await gathered_localized_titles.json()
+
+    return extract_localized_titles(localized_titles, languages)
+
+
+def extract_localized_titles(data: dict, languages):
+    results = {}
+    # Loop through the edges in the JSON data
+    for edge in data['data']['title']['akas']['edges']:
+        node = edge['node']
+        country_id = node['country']['id'].lower()
+
+        # Check if the country id or language matches any of the passed languages
+        if country_id in languages:
+            title = node['displayableProperty']['value']['plainText']
+            qualifiers = node['displayableProperty'].get('qualifiersInMarkdownList') or []
+
+            # Check if any qualifier mentions "dubbed"
+            is_dubbed = any("dubbed" in (qualifier.get('plainText', '').lower()) for qualifier in qualifiers)
+
+            # Prioritize dubbed titles or store the title if no better alternative exists
+            if is_dubbed or country_id not in results:
+                results[country_id] = title
+    return results
 
 
 def format_title(data: dict, config: dict):
