@@ -28,7 +28,7 @@ from comet.utils.general import (
 from comet.utils.logger import logger
 from comet.utils.models import database, rtn, settings
 
-streams = APIRouter()
+streams = APIRouter(prefix=f"{settings.URL_PREFIX}")
 
 
 @streams.get("/stream/{type}/{id}.json")
@@ -412,7 +412,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                             "title": format_title(data, config),
                             "torrentTitle": data["torrent_title"],
                             "torrentSize": data["torrent_size"],
-                            "url": f"{request.url.scheme}://{request.url.netloc}/{b64config}/playback/{hash}/{data['index']}{file_extension}",
+                            "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{b64config}/playback/{hash}/{data['index']}{file_extension}",
                         }
                     )
         return {"streams": results}
@@ -426,10 +426,10 @@ async def playback(b64config: str, hash: str, index: str):
 @streams.get("/{b64config}/playback/{hash}/{index}")
 async def playback(request: Request, b64config: str, hash: str, index: str):
     config = config_check(b64config)
-    base_url = str(request.base_url)
+    base_url = str(request.base_url).rstrip('/')
     index = index.split('.', 1)[0]
     if not config:
-        return RedirectResponse(f"{base_url}assets/invalidconfig.mp4", status_code=302)
+        return RedirectResponse(f"{base_url}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/assets/invalidconfig.mp4", status_code=302)
 
     async with aiohttp.ClientSession() as session:
         # Check for cached download link
@@ -456,7 +456,7 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
             download_link = await debrid.generate_download_link(hash, index)
 
             if not download_link:
-                return RedirectResponse(f"{base_url}assets/uncached.mp4", status_code=302)
+                return RedirectResponse(f"{base_url}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/assets/uncached.mp4", status_code=302)
             # Cleanup uncached Torrent from db if possible
             await database.execute(
                 "DELETE FROM uncached_torrents WHERE hash = :hash",
@@ -525,7 +525,7 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
                     background=BackgroundTask(streamer.close),
                 )
 
-            return RedirectResponse(f"{base_url}assets/uncached.mp4", status_code=302)
+            return RedirectResponse(f"{base_url}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/assets/uncached.mp4", status_code=302)
 
         return RedirectResponse(download_link, status_code=302)
 

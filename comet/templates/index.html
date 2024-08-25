@@ -628,6 +628,7 @@
                     let defaultLanguages = [];
                     let defaultResolutions = [];
                     let defaultResultFormat = [];
+                    const webConfig = {{webConfig|tojson}};
 
                     document.addEventListener("DOMContentLoaded", async () => {
                         await Promise.allSettled([
@@ -639,7 +640,6 @@
                             customElements.whenDefined("sl-icon"),
                         ]);
 
-                        const webConfig = {{webConfig|tojson}};
                         populateSelect("indexers", webConfig.indexers);
                         populateSelect("indexersUncached", webConfig.indexers);
                         populateSelect("languages", webConfig.languages);
@@ -663,7 +663,7 @@
 
                         // try populate the form from previous settings
                         try {
-                            const settings = getSettingsFromUrl();
+                            const settings = getSettingsFromUrl(webConfig);
                             if (settings != null) { populateFormFromSettings(settings); }
                         } catch (error) {
                             console.log("Failed to retrieve or parse settings from URL:", error);
@@ -780,7 +780,7 @@
                         const settingsString = btoa(JSON.stringify(settings))
 
                         const textArea = document.createElement("textarea");
-                        textArea.value = `${window.location.origin}/${settingsString}/manifest.json`;
+                        textArea.value = `${window.location.origin}${webConfig.urlPrefix ? `${webConfig.urlPrefix}` : ''}/${settingsString}/manifest.json`;
                         document.body.appendChild(textArea);
                         textArea.focus();
                         textArea.select();
@@ -795,18 +795,23 @@
                     installButton.addEventListener("click", () => {
                         const settings = getSettings();
                         const settingsString = btoa(JSON.stringify(settings))
-                        window.location.href = `stremio://${window.location.host}/${settingsString}/manifest.json`;
+                        window.location.href = `stremio://${window.location.host}${webConfig.urlPrefix ? `${webConfig.urlPrefix}` : ''}/${settingsString}/manifest.json`;
                         console.log(settingsString);
                         installAlert.toast();
                     });
 
-                    function getSettingsFromUrl() {
+                    function getSettingsFromUrl(webConfig) {
                         const url = window.location.href;
                         // Try parse settings from the URL
                         if (url.split("/").length < 5) {
                             console.log("no previous settings"); return null;
                         }
-                        const settingsString =  url.split("/")[3];
+                        let settingsString = "undefined"
+                        if (webConfig.urlPrefix) {
+                            settingsString =  url.split("/")[4];
+                        } else {
+                            settingsString =  url.split("/")[3];
+                        }
                         if (typeof settingsString === "undefined") {
                             console.log("can't fetch previous settings", settingsString)
                             return null;

@@ -8,12 +8,13 @@ from comet.utils.models import settings
 from comet.utils.general import config_check, get_debrid_extension
 
 templates = Jinja2Templates("comet/templates")
-main = APIRouter()
+main = APIRouter(prefix=f"{settings.URL_PREFIX}")
 
 
 @main.get("/", status_code=200)
-async def root():
-    return RedirectResponse("/configure")
+async def root(request: Request):
+    redirect_path = request.url_for('configure')
+    return RedirectResponse(redirect_path)
 
 
 @main.get("/health", status_code=200)
@@ -62,6 +63,7 @@ web_config = {
     ],
     "resultFormat": ["Title", "Metadata", "Size", "Tracker", "Uncached", "Seeders", "Languages"],
     "sortType": ["Sort_by_Rank", "Sort_by_Resolution", "Sort_by_Resolution_then_Seeders", "Sort_by_Resolution_then_Size"],
+    "urlPrefix": settings.URL_PREFIX if settings.URL_PREFIX else "",
 }
 
 @main.get("/configure")
