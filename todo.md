@@ -36,6 +36,12 @@
 - File extensions added to url. Only when possible. Primarily only for cached results. Does not work for uncached torrents for example.
 - Added DEBRID_TAKE_FIRST env. Explicitly returns first results on debrid profile. Useful for private uploads or if indexers are down on jackett/prowlarr. Atm only for debrid-link and real-debrid.
 
+### Update 4.1
+- Added UNCACHED_TTL. Needed to make sure uncached-cache-db gets fully cleared. 
+  - Time when uncached torrents which download was started but never watched or finished will be deleted
+  - Depends on CACHED_TTL. Meaning numbers smaller then that dont really make sense.
+  - Basically the time a torrent has to be cached/downloaded until forgotten.
+
 ### Still need to do:
 - About FileResponse: Does not work in stremio app. Issue with headers/redirect. Works when range headers added. Issue when range headers added multiple calls of generate_download_link, fix is redirect to separate endpoint.
 - Add uncached support for other debrid services as uncached logic is now general enough for it to be nearly copy pasted

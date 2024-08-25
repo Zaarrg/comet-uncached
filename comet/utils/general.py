@@ -2,6 +2,8 @@ import base64
 import hashlib
 import json
 import re
+import time
+
 import aiohttp
 import bencodepy
 
@@ -561,6 +563,7 @@ async def add_uncached_files(
     allowed_tracker_ids_set = {tracker_id.lower() for tracker_id in allowed_tracker_ids}
     found_uncached = 0
     uncached_torrents = []
+    current_timestamp = int(time.time())
 
     for torrent in torrents:
         tracker = torrent.get(tracker_key, "").lower()
@@ -584,13 +587,14 @@ async def add_uncached_files(
                     "hash": info_hash,
                     "torrentId": "",
                     "data": torrent_data,
-                    "cacheKey": cache_key
+                    "cacheKey": cache_key,
+                    "timestamp": current_timestamp
                 })
 
     # Batch insert uncached torrents
     if uncached_torrents:
         await database.execute_many(
-            "INSERT OR REPLACE INTO uncached_torrents (hash, torrentId, data, cacheKey) VALUES (:hash, :torrentId, :data, :cacheKey)",
+            "INSERT OR IGNORE INTO uncached_torrents (hash, torrentId, data, cacheKey, timestamp) VALUES (:hash, :torrentId, :data, :cacheKey, :timestamp)",
             uncached_torrents
         )
 

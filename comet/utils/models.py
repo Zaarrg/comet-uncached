@@ -17,6 +17,7 @@ class AppSettings(BaseSettings):
     FASTAPI_WORKERS: Optional[int] = 2 * (os.cpu_count() or 1)
     DATABASE_PATH: Optional[str] = "data/comet.db"
     CACHE_TTL: Optional[int] = 86400
+    UNCACHED_TTL: Optional[int] = 86400
     DEBRID_PROXY_URL: Optional[str] = None
     INDEXER_MANAGER_TYPE: str = "jackett"
     INDEXER_MANAGER_URL: str = "http://127.0.0.1:9117"

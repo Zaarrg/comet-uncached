@@ -129,15 +129,19 @@ async def stream(request: Request, b64config: str, type: str, id: str):
 
                 logger.info(f"Cache expired for {log_name}")
 
-                # Delete uncached torrents matching cacheKey and with no torrentId
+                # Deletes torrents matching cachekey without torrentid and after UNCACHED_TTL the ones with a torrentid
+                expiration_timestamp = int(time.time()) - settings.UNCACHED_TTL
                 await database.execute(
                     """
                     DELETE FROM uncached_torrents
                     WHERE cacheKey = :cache_key AND 
-                          (torrentId IS NULL OR 
-                           TRIM(torrentId) = '')
+                          (
+                            (torrentId IS NULL OR TRIM(torrentId) = '')
+                            OR 
+                            (TRIM(torrentId) != '' AND timestamp < :expiration_timestamp)
+                          )
                     """,
-                    {"cache_key": cache_key}
+                    {"cache_key": cache_key, "expiration_timestamp": expiration_timestamp}
                 )
 
                 logger.info(f"Expired uncached torrents removed for {log_name}")
