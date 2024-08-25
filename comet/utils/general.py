@@ -539,9 +539,14 @@ async def check_uncached(hash: str):
         # Check if the magnet key exists and is not empty/None
         has_magnet = bool(torrent_data.get("magnet"))
 
-        return torrent_id, torrent_link, index, has_magnet
+        return {
+            "torrent_id": torrent_id,
+            "torrent_link": torrent_link,
+            "index": index,
+            "has_magnet": has_magnet
+        }
     else:
-        return None, None, None, False
+        return None
 
 
 async def add_uncached_files(

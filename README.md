@@ -6,6 +6,11 @@
   </a>
 </p>
 
+# Fork Disclaimer
+- This is a work in progress fork of the official [comet repo](https://github.com/g0ldyy/comet) and will be abandoned once finished and fully implemented there
+- This fork aims to add primarly uncached support but also enhance and add features.
+- To check the current progress and updates check the [todo.md](https://github.com/Zaarrg/comet-uncached/blob/main/todo.md)
+- Stuff might break and not work frequently!
 # Features
 - The only Stremio addon that can Proxy Debrid Streams to allow use of the Debrid Service on multiple IPs at the same time on the same account!
 - Jackett and Prowlarr support (change the `INDEXER_MANAGER_TYPE` environment variable to `jackett` or `prowlarr`)

@@ -1,4 +1,4 @@
-1.0
+### Update 1.0
 - Added Sorting of Results by Resolution + WebUi
 - Added a Max Uncached Option to limit those results + WebUi
 - Added a WebUi for which indexers to consider for uncached results
@@ -7,14 +7,14 @@
 - Modified Real Debrid to handle uncached files
 	- Added DB Table to cache uncached files + cleanup
 
-2.0
+### Update 2.0
 - If max uncached specified keeps only the ones with most seeders
 - Option to show Seeders in the title (Seeders are always shown for uncached results)
 - Refactored logic to add uncached files into a more general function
 - Added Sorting, ["Sort_by_Rank" (Default), "Sort_by_Resolution", "Sort_by_Resolution_then_Seeders", "Sort_by_Resolution_then_Size"]
 - Added language Preferences
 
-3.0
+### Update 3.0
 - Generalized getting uncached torrents
 - Optimized sorting of torrents
 - Optimized add_uncached_files to be only one loop
@@ -30,8 +30,14 @@
 - Added ability to customize the order of Title Format, Result Order and Language Preference in web ui depending on what is selected first
 - Replaced FileResponse with custom redirect to custom assets endpoint. Allows for range headers for stremio app and for redirect away from playback endpoint preventing necessary function calls
 
+### Update 4.0
+- Full generalization/modularization as far as possible and practical of uncached logic (refactor)
+- Debrid Link uncached support
+- File extensions added to url. Only when possible. Primarily only for cached results. Does not work for uncached torrents for example.
+- Added DEBRID_TAKE_FIRST env. Explicitly returns first results on debrid profile. Useful for private uploads or if indexers are down on jackett/prowlarr. Atm only for debrid-link and real-debrid.
 
-Still need to do:
+### Still need to do:
 - About FileResponse: Does not work in stremio app. Issue with headers/redirect. Works when range headers added. Issue when range headers added multiple calls of generate_download_link, fix is redirect to separate endpoint.
-- Generalize and optimize more for proper and easy support with other debrid services
-    - Maybe Generalize index assignment for uncached results
+- Add uncached support for other debrid services as uncached logic is now general enough for it to be nearly copy pasted
+- Add DEBRID_TAKE_FIRST support for the other services
+- Check jackett/prowlarr missing infohashes sometimes, probably rate limits?

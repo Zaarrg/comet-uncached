@@ -23,7 +23,7 @@ from comet.utils.general import (
     get_torrent_hash,
     translate,
     get_balanced_hashes,
-    format_title, add_uncached_files, get_localized_titles, enhance_languages
+    format_title, add_uncached_files, get_localized_titles, enhance_languages, is_video
 )
 from comet.utils.logger import logger
 from comet.utils.models import database, rtn, settings
@@ -249,6 +249,10 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         if settings.SCRAPE_TORRENTIO and 't' in config["scrapingPreference"]:
             tasks.append(get_torrentio(log_name, type, full_id))
 
+        if settings.DEBRID_TAKE_FIRST > 0:
+            if config["debridService"] == "debridlink" or config["debridService"] == "realdebrid":
+                tasks.append(debrid.get_first_files(settings.DEBRID_TAKE_FIRST))
+
         search_response = await asyncio.gather(*tasks)
         for results in search_response:
             for result in results:
@@ -397,13 +401,14 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 if hash in sorted_ranked_files:
                     hash_data = sorted_ranked_files[hash]
                     data = hash_data["data"]
+                    file_extension = next(('.' + ext for ext in data["raw_title"].split('.')[::-1] if is_video('.' + ext)), '')
                     results.append(
                         {
                             "name": f"[{debrid_extension}⚡] Comet {data['resolution'][0] if data['resolution'] != [] else 'Unknown'}",
                             "title": format_title(data, config),
                             "torrentTitle": data["torrent_title"],
                             "torrentSize": data["torrent_size"],
-                            "url": f"{request.url.scheme}://{request.url.netloc}/{b64config}/playback/{hash}/{data['index']}",
+                            "url": f"{request.url.scheme}://{request.url.netloc}/{b64config}/playback/{hash}/{data['index']}{file_extension}",
                         }
                     )
         return {"streams": results}
@@ -418,6 +423,7 @@ async def playback(b64config: str, hash: str, index: str):
 async def playback(request: Request, b64config: str, hash: str, index: str):
     config = config_check(b64config)
     base_url = str(request.base_url)
+    index = index.split('.', 1)[0]
     if not config:
         return RedirectResponse(f"{base_url}assets/invalidconfig.mp4", status_code=302)
 
