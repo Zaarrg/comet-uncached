@@ -175,6 +175,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                         if hash in sorted_ranked_files:
                             hash_data = sorted_ranked_files[hash]
                             data = hash_data["data"]
+                            file_extension = next(('.' + ext for ext in data["raw_title"].split('.')[::-1] if is_video('.' + ext)), '')
                             results.append(
                                 {
                                     "name": f"[{debrid_extension}⚡] Comet {data['resolution'][0] if data['resolution'] != [] else 'Unknown'}",
@@ -189,7 +190,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                                         if "torrent_size" in data
                                         else None
                                     ),
-                                    "url": f"{request.url.scheme}://{request.url.netloc}/{b64config}/playback/{hash}/{data['index']}",
+                                    "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{b64config}/playback/{hash}/{data['index']}{file_extension}",
                                 }
                             )
 
@@ -370,7 +371,8 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             sorted_ranked_files[hash]["data"]["size"] = files[hash]["size"]
             sorted_ranked_files[hash]["data"]["torrent_size"] = torrents_by_hash[hash]["Size"]
             sorted_ranked_files[hash]["data"]["uncached"] = files[hash]["uncached"]
-            sorted_ranked_files[hash]["data"]["seeders"] = torrents_by_hash[hash].get("Seeders", "?")
+            if torrents_by_hash[hash].get("Seeders"):
+                sorted_ranked_files[hash]["data"]["seeders"] = torrents_by_hash[hash].get("Seeders")
             sorted_ranked_files[hash]["data"]["index"] = files[hash]["index"]
 
         json_data = json.dumps(sorted_ranked_files).replace("'", "''")

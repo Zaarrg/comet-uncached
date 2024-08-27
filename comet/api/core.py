@@ -1,11 +1,11 @@
 import RTN
 
-from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Request, HTTPException, Body
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from comet.utils.models import settings
-from comet.utils.general import config_check, get_debrid_extension
+from comet.utils.general import config_check, get_debrid_extension, short_encrypt, short_decrypt
 
 templates = Jinja2Templates("comet/templates")
 main = APIRouter(prefix=f"{settings.URL_PREFIX}")
@@ -66,6 +66,7 @@ web_config = {
     "urlPrefix": settings.URL_PREFIX if settings.URL_PREFIX else "",
 }
 
+
 @main.get("/configure")
 @main.get("/{b64config}/configure")
 async def configure(request: Request):
@@ -77,9 +78,31 @@ async def configure(request: Request):
             if settings.CUSTOM_HEADER_HTML and settings.CUSTOM_HEADER_HTML != "None"
             else "",
             "webConfig": web_config,
+            "TOKEN": settings.TOKEN
+            if settings.TOKEN else "",
+            "URL_PREFIX": settings.URL_PREFIX
+            if settings.URL_PREFIX else "",
             "proxyDebridStream": settings.PROXY_DEBRID_STREAM,
         },
     )
+
+
+@main.post("/configure", response_class=JSONResponse)
+async def configure_post(data: str = Body(..., embed=True), action: str = Body(..., embed=True)):
+    if not settings.TOKEN:
+        raise HTTPException(status_code=400, detail="Encryption key not set")
+
+    try:
+        if action == "encrypt":
+            result = short_encrypt(data, settings.TOKEN)
+        elif action == "decrypt":
+            result = short_decrypt(data, settings.TOKEN)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid action")
+
+        return JSONResponse(content={"result": result})
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @main.get("/manifest.json")

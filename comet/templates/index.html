@@ -629,6 +629,8 @@
                     let defaultResolutions = [];
                     let defaultResultFormat = [];
                     const webConfig = {{webConfig|tojson}};
+                    const encryption_TOKEN = "{{TOKEN}}"
+                    let encryption_url = "{{URL_PREFIX}}/configure"
 
                     document.addEventListener("DOMContentLoaded", async () => {
                         await Promise.allSettled([
@@ -663,7 +665,7 @@
 
                         // try populate the form from previous settings
                         try {
-                            const settings = getSettingsFromUrl(webConfig);
+                            const settings = await getSettingsFromUrl(webConfig);
                             if (settings != null) { populateFormFromSettings(settings); }
                         } catch (error) {
                             console.log("Failed to retrieve or parse settings from URL:", error);
@@ -775,9 +777,12 @@
                         };
                     }
 
-                    copyLinkButton.addEventListener("click", () => {
+                    copyLinkButton.addEventListener("click", async () => {
                         const settings = getSettings();
-                        const settingsString = btoa(JSON.stringify(settings))
+                        let settingsString = urlSafeBase64Encode(JSON.stringify(settings))
+                        if (encryption_TOKEN) {
+                            settingsString = await encryptData(settingsString, encryption_TOKEN)
+                        }
 
                         const textArea = document.createElement("textarea");
                         textArea.value = `${window.location.origin}${webConfig.urlPrefix ? `${webConfig.urlPrefix}` : ''}/${settingsString}/manifest.json`;
@@ -792,19 +797,23 @@
                         copyAlert.toast();
                     });
 
-                    installButton.addEventListener("click", () => {
+                    installButton.addEventListener("click", async () => {
                         const settings = getSettings();
-                        const settingsString = btoa(JSON.stringify(settings))
+                        let settingsString = urlSafeBase64Encode(JSON.stringify(settings))
+                        if (encryption_TOKEN) {
+                            settingsString = await encryptData(settingsString, encryption_TOKEN)
+                        }
                         window.location.href = `stremio://${window.location.host}${webConfig.urlPrefix ? `${webConfig.urlPrefix}` : ''}/${settingsString}/manifest.json`;
                         console.log(settingsString);
                         installAlert.toast();
                     });
 
-                    function getSettingsFromUrl(webConfig) {
+                    async function getSettingsFromUrl(webConfig) {
                         const url = window.location.href;
                         // Try parse settings from the URL
-                        if (url.split("/").length < 5) {
-                            console.log("no previous settings"); return null;
+                        if ((url.split("/").length < 5 && !webConfig.urlPrefix) || (url.split("/").length < 6 && webConfig.urlPrefix)) {
+                            console.log("no previous settings");
+                            return null;
                         }
                         let settingsString = "undefined"
                         if (webConfig.urlPrefix) {
@@ -816,8 +825,10 @@
                             console.log("can't fetch previous settings", settingsString)
                             return null;
                         }
-                        const settingsJson = atob(settingsString);
-                        return JSON.parse(settingsJson);
+                        if (encryption_TOKEN && isEncrypted(settingsString)) {
+                            settingsString = await decryptData(settingsString, encryption_TOKEN)
+                        }
+                        return decodeBase64ToJson(settingsString);
                     }
 
                     function populateFormFromSettings(settings) {
@@ -838,27 +849,93 @@
                             document.getElementById("languages").value = settings.languages;
                         if (settings.resolutions != "All")
                             document.getElementById("resolutions").value = settings.resolutions;
+                        console.log(settings.resultFormat)
                         if (settings.resultFormat != "All")
-                            setOrderedMultiSelectValue("resultFormat", settings.resultFormat);
+                            document.getElementById("resultFormat").value = settings.resultFormat;
                     }
 
                     function setOrderedMultiSelectValue(selectId, values) {
                         const select = document.getElementById(selectId);
-                        const options = Array.from(select.querySelectorAll('sl-option'));
-
-                        // Deselect all options first
-                        options.forEach(option => option.selected = false);
-
-                        // Select options in the order specified by values
-                        values.forEach(value => {
-                            const option = options.find(opt => opt.value === value);
-                            if (option) {
-                                option.selected = true;
-                            }
-                        });
-
+                        select.value = values
                         // Update the display order
                         updateDisplayOrder(select, values);
+                    }
+
+                    async function encryptData(b64Data) {
+                        try {
+                            const response = await fetch(encryption_url, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    data: b64Data,
+                                    action: 'encrypt'
+                                })
+                            });
+
+                            if (!response.ok) {
+                                throw new Error('Encryption failed');
+                            }
+
+                            const result = await response.json();
+                            return result.result;
+                        } catch (error) {
+                            console.error('Encryption error:', error);
+                            throw error;
+                        }
+                    }
+
+                    async function decryptData(encryptedData) {
+                        try {
+                            const response = await fetch(encryption_url, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    data: encryptedData,
+                                    action: 'decrypt'
+                                })
+                            });
+
+                            if (!response.ok) {
+                                throw new Error('Decryption failed');
+                            }
+
+                            const result = await response.json();
+                            return result.result;
+                        } catch (error) {
+                            console.error('Decryption error:', error);
+                            throw error;
+                        }
+                    }
+
+                    function isEncrypted(s) {
+                        try {
+                            const base64Str = s + '='.repeat((4 - s.length % 4) % 4);
+                            const standardBase64 = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+                            const decodedStr = atob(standardBase64);
+                            JSON.parse(decodedStr);
+                            return false;
+                        } catch (error) {
+                            return true;
+                        }
+                    }
+
+                    function urlSafeBase64Encode(str) {
+                        return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)))
+                                .replace(/\+/g, '-')
+                                .replace(/\//g, '_')
+                                .replace(/=+$/, '');
+                    }
+
+                    function decodeBase64ToJson(base64Str) {
+                        base64Str += '='.repeat((4 - base64Str.length % 4) % 4);
+                        base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+                        const decodedStr = atob(base64Str);
+                        const jsonObject = JSON.parse(decodedStr);
+                        return jsonObject;
                     }
 
                 </script>

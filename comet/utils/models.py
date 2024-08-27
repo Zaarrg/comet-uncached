@@ -34,6 +34,7 @@ class AppSettings(BaseSettings):
     PROXY_DEBRID_STREAM_PASSWORD: Optional[str] = "CHANGE_ME"
     TITLE_MATCH_CHECK: Optional[bool] = True
     URL_PREFIX: Optional[str] = ""
+    TOKEN: Optional[str] = ""
 
 
 settings = AppSettings()

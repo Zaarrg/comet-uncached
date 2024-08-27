@@ -1,8 +1,10 @@
 import base64
 import hashlib
 import json
+import os
 import re
 import time
+import zlib
 
 import aiohttp
 import bencodepy
@@ -11,6 +13,10 @@ from RTN import parse, title_match, Torrent
 from aiohttp import ClientSession
 from curl_cffi import requests
 from databases import Database
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from comet.utils.logger import logger
 from comet.utils.models import settings, ConfigModel, database
@@ -250,7 +256,7 @@ lang_map = {
     'dut': 'nl', 'nld': 'nl', 'nl': 'nl', 'dutch': 'nl',
     'swe': 'sv', 'sv': 'sv', 'swedish': 'sv',
     'dan': 'da', 'da': 'da', 'danish': 'da',
-    'nor': 'no', 'no': 'no', 'norwegian': 'no',
+    'nor': 'nb', 'norwegian': 'nb',
     'fin': 'fi', 'fi': 'fi', 'finnish': 'fi',
     'gre': 'el', 'ell': 'el', 'el': 'el', 'greek': 'el',
     'hun': 'hu', 'hu': 'hu', 'hungarian': 'hu',
@@ -323,12 +329,53 @@ def bytes_to_size(bytes: int):
     return f"{round(bytes, 2)} {sizes[i]}"
 
 
-def config_check(b64config: str):
+def derive_key(token: str, salt: bytes = b'comet_fast') -> bytes:
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+        backend=default_backend()
+    )
+    return kdf.derive(token.encode())
+
+
+def short_encrypt(data: str, token: str) -> str:
+    compressed = zlib.compress(data.encode('utf-8'), level=9)
+    key = derive_key(token)
+    nonce = os.urandom(16)
+    cipher = Cipher(algorithms.AES(key), modes.CTR(nonce), backend=default_backend())
+    encrypted = cipher.encryptor().update(compressed)
+    return base64.urlsafe_b64encode(nonce + encrypted).decode('ascii').rstrip('=')
+
+
+def short_decrypt(encoded_data: str, token: str) -> str:
+    full_payload = base64.urlsafe_b64decode(encoded_data + '=' * (-len(encoded_data) % 4))
+    nonce, encrypted = full_payload[:16], full_payload[16:]
+    key = derive_key(token)
+    cipher = Cipher(algorithms.AES(key), modes.CTR(nonce), backend=default_backend())
+    decrypted = cipher.decryptor().update(encrypted)
+    return zlib.decompress(decrypted).decode('utf-8')
+
+
+def is_encrypted(s: str) -> bool:
     try:
-        config = json.loads(base64.b64decode(b64config).decode())
+        json.loads(base64.b64decode(s + '=' * (-len(s) % 4)).decode())
+        return False
+    except:
+        return True
+
+
+def config_check(config_data: str):
+    try:
+        if settings.TOKEN and is_encrypted(config_data):
+            config_data = short_decrypt(config_data, settings.TOKEN)
+
+        config = json.loads(base64.b64decode(config_data + '=' * (-len(config_data) % 4)).decode())
         validated_config = ConfigModel(**config)
         return validated_config.model_dump()
-    except:
+    except Exception as e:
+        logger.error(f"Error checking config: {e}")
         return False
 
 
@@ -481,6 +528,7 @@ async def get_torrentio(log_name: str, type: str, full_id: str):
             title = torrent["title"]
             title_full = title.split("\n👤")[0]
             tracker = title.split("⚙️ ")[1].split("\n")[0]
+            seeders = int(title.split("👤")[1].split()[0])
 
             results.append(
                 {
@@ -488,6 +536,7 @@ async def get_torrentio(log_name: str, type: str, full_id: str):
                     "InfoHash": torrent["infoHash"],
                     "Size": None,
                     "Tracker": f"Torrentio|{tracker}",
+                    "Seeders": seeders
                 }
             )
 
@@ -888,7 +937,7 @@ def format_title(data: dict, config: dict):
         if data.get("uncached", False):
             title += "\n" + f"⚠️ Uncached"
     if "Seeders" in config["resultFormat"] or "All" in config["resultFormat"] or data.get("uncached", True):
-        if data.get('seeders') is not None and data.get('seeders') != '?':
+        if data.get('seeders', None) is not None:
             title += f"🌱 {data.get('seeders')} Seeders"
     if "Languages" in config["resultFormat"] or "All" in config["resultFormat"]:
         languages = data["language"]

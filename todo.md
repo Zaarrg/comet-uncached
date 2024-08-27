@@ -42,6 +42,23 @@
   - Depends on CACHED_TTL. Meaning numbers smaller then that dont really make sense.
   - Basically the time a torrent has to be cached/downloaded until forgotten.
 
+###  Update 5
+- Added TOKEN env. Uses AES-256 with CTR mode and zlib compression to encrypt/decrypt the config in the url
+  - Uses a post request on /configure to encode/decode
+- Fixed missing URL_PREFIX and file_extension when loading cached results
+- Removed no:norwegian for enhanced language check to improve anime compatibility
+- Fixed Sort by seeders not working when titles had no seeders info
+- Added seeders for torrentio
+- Fixed configure ui using a order able select for Result Format
+
+
+---
+### List of new envs
+- UNCACHED_TTL - Time when uncached results that started downloading and never finished or where never watched will be deleted out of cache
+- DEBRID_TAKE_FIRST - Returns this amount of results straight from debrid then runs through title match check
+- URL_PREFIX - Prefix to use for all endpoints like "/comet"
+- TOKEN - Token to use for encryption/decryption of config in url
+
 ### Still need to do:
 - About FileResponse: Does not work in stremio app. Issue with headers/redirect. Works when range headers added. Issue when range headers added multiple calls of generate_download_link, fix is redirect to separate endpoint.
 - Add uncached support for other debrid services as uncached logic is now general enough for it to be nearly copy pasted
