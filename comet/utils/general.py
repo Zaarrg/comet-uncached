@@ -561,7 +561,8 @@ async def filter(torrents: list, title_list: list):
         # Removes alternative titles that would come after a -, / or |
         separators = r'[\/\-|]'
         parts = re.split(separators, title)
-        title = parts[0].strip()
+        if len(parts) > 1:
+            title = parts[0].strip()
 
         for name in title_list:
             if title_match(name, translate(parse(title).parsed_title)):
