@@ -565,7 +565,7 @@ async def filter(torrents: list, title_list: list):
             title = parts[0].strip()
 
         for name in title_list:
-            if title_match(name, translate(parse(title).parsed_title)):
+            if title and title_match(name, translate(parse(title).parsed_title)):
                 results.append((index, True))
                 break
         else:
