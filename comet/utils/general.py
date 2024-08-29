@@ -279,7 +279,7 @@ lang_map = {
     'tam': 'ta', 'ta': 'ta', 'tamil': 'ta',
     'tel': 'te', 'te': 'te', 'telugu': 'te',
     'urd': 'ur', 'ur': 'ur', 'urdu': 'ur',
-    'ben': 'bn', 'bn': 'bn', 'bengali': 'bn',
+    'bn': 'bn', 'bengali': 'bn',
     'may': 'ms', 'msa': 'ms', 'ms': 'ms', 'malay': 'ms',
     'fil': 'tl', 'tl': 'tl', 'filipino': 'tl', 'tagalog': 'tl'
 }
@@ -912,20 +912,20 @@ async def get_localized_titles(languages, id: str, session: ClientSession):
 
 def extract_localized_titles(data: dict, languages):
     results = {}
-    # Loop through the edges in the JSON data
-    for edge in data['data']['title']['akas']['edges']:
-        node = edge['node']
-        country_id = node['country']['id'].lower()
+    edges = data.get('data', {}).get('title', {}).get('akas', {}).get('edges', [])
 
-        # Check if the country id or language matches any of the passed languages
+    for edge in edges:
+        node = edge.get('node', {})
+        country = node.get('country', {})
+        country_id = country.get('id', '').lower() if country else ''
+
         if country_id in languages:
-            title = node['displayableProperty']['value']['plainText']
-            qualifiers = node['displayableProperty'].get('qualifiersInMarkdownList') or []
+            display_prop = node.get('displayableProperty', {})
+            title = display_prop.get('value', {}).get('plainText', '')
+            qualifiers = display_prop.get('qualifiersInMarkdownList') or []
 
-            # Check if any qualifier mentions "dubbed"
             is_dubbed = any("dubbed" in (qualifier.get('plainText', '').lower()) for qualifier in qualifiers)
 
-            # Prioritize dubbed titles or store the title if no better alternative exists
             if is_dubbed or country_id not in results:
                 results[country_id] = title
     return results

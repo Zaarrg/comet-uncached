@@ -84,20 +84,17 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 element = metadata["d"][
                     0 if metadata["d"][0]["id"] not in ["/imdbpicks/summer-watch-guide", "/emmys"] else 1
                 ]
-
                 for element in metadata["d"]:
                     if element["id"] == id:
                         break
 
                 name = element["l"]
                 year = element["y"]
-
                 titles_per_language = {}
                 if config.get('searchLanguage') and config['searchLanguage']:
                     language_codes = list(RTN.patterns.get_language_codes(config['searchLanguage']).values())
                     titles_per_language = await get_localized_titles(language_codes, id, session)
-                titles_per_language['imdb'] = element["l"]
-
+                titles_per_language['imdb'] = name
         except Exception as e:
             logger.warning(f"Exception while getting metadata for {id}: {e}")
 
@@ -253,18 +250,20 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             f"Titles gathered for searching {titles_per_language}"
         )
         if indexer_manager_type and search_indexer:
-
             logger.info(
                 f"Start of {indexer_manager_type} search for {log_name} with indexers {config['indexers']}"
             )
 
             search_terms = titles_per_language_list
             if type == "series":
+                series_search_terms = []
                 for titles in titles_per_language_list:
                     if not kitsu:
-                        search_terms.append(f"{titles} S0{season}E0{episode}")
+                        series_search_terms.append(f"{titles} S0{season}E0{episode}")
                     else:
-                        search_terms.append(f"{titles} {episode}")
+                        series_search_terms.append(f"{titles} {episode}")
+                search_terms.extend(series_search_terms)
+            search_terms = list(dict.fromkeys(term.replace('-', ' ').replace('_', ' ') for term in reversed(search_terms)))[::-1]
             tasks.extend(
                 get_indexer_manager(
                     session, indexer_manager_type, config["indexers"], term
@@ -276,6 +275,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 f"No indexer {'manager ' if not indexer_manager_type else ' '}{'selected by user' if indexer_manager_type else 'defined'} for {log_name}"
             )
 
+        titles_per_language_list = list(dict.fromkeys(title.replace('-', ' ').replace('_', ' ') for title in reversed(titles_per_language_list)))[::-1]
         if settings.ZILEAN_URL and 'z' in config["scrapingPreference"]:
             tasks.extend(
                 get_zilean(session, titles, log_name, season, episode)
