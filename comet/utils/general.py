@@ -550,7 +550,7 @@ async def get_torrentio(log_name: str, type: str, full_id: str):
     return results
 
 
-async def filter(torrents: list, title_list: list):
+async def filter(torrents: list, title_list: list, year: int):
     results = []
     for torrent in torrents:
         index = torrent[0]
@@ -563,11 +563,19 @@ async def filter(torrents: list, title_list: list):
         parts = re.split(separators, title)
         if len(parts) > 1:
             title = parts[0].strip()
+        if not title:
+            continue
 
+        parsed = parse(title)
         for name in title_list:
-            if title and title_match(name, translate(parse(title).parsed_title)):
-                results.append((index, True))
-                break
+            if not title_match(name, translate(parsed.parsed_title)):
+                continue
+
+            if year and parsed.year != 0 and year != parsed.year:
+                continue
+
+            results.append((index, True))
+            break
         else:
             results.append((index, False))
 
@@ -643,10 +651,12 @@ async def add_uncached_files(
 
     # Batch insert uncached torrents
     if uncached_torrents:
-        await database.execute_many(
-            "INSERT OR IGNORE INTO uncached_torrents (hash, torrentId, data, cacheKey, timestamp) VALUES (:hash, :torrentId, :data, :cacheKey, :timestamp)",
-            uncached_torrents
-        )
+        await database.execute(f"""
+        INSERT {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}INTO uncached_torrents 
+        (hash, torrentId, data, cacheKey, timestamp)
+        VALUES (:hash, :torrentId, :data, :cacheKey, :timestamp)
+        {'' if settings.DATABASE_TYPE == 'sqlite' else 'ON CONFLICT (hash) DO NOTHING'}
+        """, uncached_torrents)
 
     logger.info(
         f"{found_uncached} uncached files found on {', '.join(allowed_tracker_ids)} for {log_name}"
@@ -923,7 +933,6 @@ def extract_localized_titles(data: dict, languages):
 
 def format_title(data: dict, config: dict):
     title = ""
-    logger.info(config)
     if "Title" in config["resultFormat"] or "All" in config["resultFormat"]:
         title += f"{data['title']}\n"
     if "Metadata" in config["resultFormat"] or "All" in config["resultFormat"]:
@@ -945,7 +954,9 @@ def format_title(data: dict, config: dict):
         formatted_languages = (
             "/".join(get_language_emoji(language) for language in languages)
             if languages
-            else get_language_emoji("multi_audio") if data["is_multi_audio"] else None
+            else get_language_emoji("multi_audio")
+            if data["is_multi_audio"]
+            else None
         )
         languages_str = "\n" + formatted_languages if formatted_languages else ""
         title += f"{languages_str}"

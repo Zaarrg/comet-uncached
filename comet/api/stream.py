@@ -5,10 +5,18 @@ import time
 import RTN.patterns
 import aiohttp
 import httpx
+
 import os
+import orjson
 
 from fastapi import APIRouter, Request, Header
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    RedirectResponse,
+    StreamingResponse,
+    FileResponse,
+    Response,
+)
+
 from starlette.background import BackgroundTask
 from RTN import Torrent, sort_torrents
 
@@ -53,7 +61,6 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         episode = None
         if type == "series":
             info = id.split(":")
-            full_id = id
             id = info[0]
             season = int(info[1])
             episode = int(info[2])
@@ -68,19 +75,29 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 get_metadata = await get_metadata.json()
                 name = get_metadata["data"]["attributes"]["canonicalTitle"]
                 season = 1
+                year = None
             else:
                 get_metadata = await session.get(
                     f"https://v3.sg.media-imdb.com/suggestion/a/{id}.json"
                 )
                 metadata = await get_metadata.json()
-                name = metadata["d"][
-                    0 if metadata["d"][0]["l"] != "Summer Watch Guide" else 1
-                ]["l"]
+                element = metadata["d"][
+                    0 if metadata["d"][0]["id"] not in ["/imdbpicks/summer-watch-guide", "/emmys"] else 1
+                ]
+
+                for element in metadata["d"]:
+                    if element["id"] == id:
+                        break
+
+                name = element["l"]
+                year = element["y"]
+
                 titles_per_language = {}
                 if config.get('searchLanguage') and config['searchLanguage']:
                     language_codes = list(RTN.patterns.get_language_codes(config['searchLanguage']).values())
                     titles_per_language = await get_localized_titles(language_codes, id, session)
-                titles_per_language['imdb'] = name
+                titles_per_language['imdb'] = element["l"]
+
         except Exception as e:
             logger.warning(f"Exception while getting metadata for {id}: {e}")
 
@@ -198,6 +215,17 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         else:
             logger.info(f"No cache found for {log_name} with user configuration")
 
+        if (
+            settings.PROXY_DEBRID_STREAM
+            and settings.PROXY_DEBRID_STREAM_PASSWORD
+            == config["debridStreamProxyPassword"]
+            and config["debridApiKey"] == ""
+        ):
+            config["debridService"] = (
+                settings.PROXY_DEBRID_STREAM_DEBRID_DEFAULT_SERVICE
+            )
+            config["debridApiKey"] = settings.PROXY_DEBRID_STREAM_DEBRID_DEFAULT_APIKEY
+
         debrid = getDebrid(session, config)
 
         check_premium = await debrid.check_premium()
@@ -224,7 +252,8 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         logger.info(
             f"Titles gathered for searching {titles_per_language}"
         )
-        if search_indexer:
+        if indexer_manager_type and search_indexer:
+
             logger.info(
                 f"Start of {indexer_manager_type} search for {log_name} with indexers {config['indexers']}"
             )
@@ -243,7 +272,9 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 for term in search_terms
             )
         else:
-            logger.info(f"No indexer selected by user for {log_name}")
+            logger.info(
+                f"No indexer {'manager ' if not indexer_manager_type else ' '}{'selected by user' if indexer_manager_type else 'defined'} for {log_name}"
+            )
 
         if settings.ZILEAN_URL and 'z' in config["scrapingPreference"]:
             tasks.extend(
@@ -264,7 +295,27 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 torrents.append(result)
 
         logger.info(
-            f"{len(torrents)} torrents found for {log_name} with {indexer_manager_type}{' and Zilean' if settings.ZILEAN_URL else ''}{' and Torrentio' if settings.SCRAPE_TORRENTIO else ''}"
+            f"{len(torrents)} torrents found for {log_name}"
+            + (
+                " with "
+                + ", ".join(
+                    part
+                    for part in [
+                        indexer_manager_type,
+                        "Zilean" if settings.ZILEAN_URL else None,
+                        "Torrentio" if settings.SCRAPE_TORRENTIO else None,
+                    ]
+                    if part
+                )
+                if any(
+                    [
+                        indexer_manager_type,
+                        settings.ZILEAN_URL,
+                        settings.SCRAPE_TORRENTIO,
+                    ]
+                )
+                else ""
+            )
         )
 
         if len(torrents) == 0:
@@ -280,7 +331,8 @@ async def stream(request: Request, b64config: str, type: str, id: str):
 
             tasks = []
             for chunk in chunks:
-                tasks.append(filter(chunk, titles_per_language_list))
+                tasks.append(filter(chunk, titles_per_language_list, year))
+
 
             filtered_torrents = await asyncio.gather(*tasks)
             index_less = 0
@@ -377,7 +429,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
 
         json_data = json.dumps(sorted_ranked_files).replace("'", "''")
         await database.execute(
-            f"INSERT OR IGNORE INTO cache (cacheKey, results, timestamp) VALUES (:cache_key, :json_data, :timestamp)",
+            f"INSERT {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}INTO cache (cacheKey, results, timestamp) VALUES (:cache_key, :json_data, :timestamp){' ON CONFLICT DO NOTHING' if settings.DATABASE_TYPE == 'postgresql' else ''}",
             {"cache_key": cache_key, "json_data": json_data, "timestamp": time.time()},
         )
         logger.info(f"Results have been cached for {log_name}")
@@ -425,6 +477,27 @@ async def playback(b64config: str, hash: str, index: str):
     return RedirectResponse("https://stremio.fast", status_code=302)
 
 
+class CustomORJSONResponse(Response):
+    media_type = "application/json"
+
+    def render(self, content) -> bytes:
+        assert orjson is not None, "orjson must be installed"
+        return orjson.dumps(content, option=orjson.OPT_INDENT_2)
+
+
+@streams.get("/active-connections", response_class=CustomORJSONResponse)
+async def active_connections(request: Request, password: str):
+    if password != settings.DASHBOARD_ADMIN_PASSWORD:
+        return "Invalid Password"
+
+    active_connections = await database.fetch_all("SELECT * FROM active_connections")
+
+    return {
+        "total_connections": len(active_connections),
+        "active_connections": active_connections,
+    }
+
+
 @streams.get("/{b64config}/playback/{hash}/{index}")
 async def playback(request: Request, b64config: str, hash: str, index: str):
     config = config_check(b64config)
@@ -433,10 +506,23 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
     if not config:
         return RedirectResponse(f"{base_url}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/assets/invalidconfig.mp4", status_code=302)
 
+    if (
+        settings.PROXY_DEBRID_STREAM
+        and settings.PROXY_DEBRID_STREAM_PASSWORD
+        == config["debridStreamProxyPassword"]
+        and config["debridApiKey"] == ""
+    ):
+        config["debridService"] = (
+            settings.PROXY_DEBRID_STREAM_DEBRID_DEFAULT_SERVICE
+        )
+        config["debridApiKey"] = (
+            settings.PROXY_DEBRID_STREAM_DEBRID_DEFAULT_APIKEY
+        )
+
     async with aiohttp.ClientSession() as session:
         # Check for cached download link
         cached_link = await database.fetch_one(
-            f"SELECT link, timestamp FROM download_links WHERE debrid_key = '{config['debridApiKey']}' AND hash = '{hash}' AND `index` = '{index}'"
+            f"SELECT link, timestamp FROM download_links WHERE debrid_key = '{config['debridApiKey']}' AND hash = '{hash}' AND file_index = '{index}'"
         )
 
         current_time = time.time()
@@ -450,7 +536,7 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
             else:
                 # Cache expired, remove old entry
                 await database.execute(
-                    f"DELETE FROM download_links WHERE debrid_key = '{config['debridApiKey']}' AND hash = '{hash}' AND `index` = '{index}'"
+                    f"DELETE FROM download_links WHERE debrid_key = '{config['debridApiKey']}' AND hash = '{hash}' AND file_index = '{index}'"
                 )
 
         if not download_link:
@@ -466,11 +552,11 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
             )
             # Cache the new download link
             await database.execute(
-                "INSERT OR REPLACE INTO download_links (debrid_key, hash, `index`, link, timestamp) VALUES (:debrid_key, :hash, :index, :link, :timestamp)",
+                f"INSERT {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}INTO download_links (debrid_key, hash, file_index, link, timestamp) VALUES (:debrid_key, :hash, :file_index, :link, :timestamp){' ON CONFLICT DO NOTHING' if settings.DATABASE_TYPE == 'postgresql' else ''}",
                 {
                     "debrid_key": config["debridApiKey"],
                     "hash": hash,
-                    "index": index,
+                    "file_index": index,
                     "link": download_link,
                     "timestamp": current_time,
                 },
@@ -481,10 +567,28 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
             and settings.PROXY_DEBRID_STREAM_PASSWORD
             == config["debridStreamProxyPassword"]
         ):
+            active_ip_connections = await database.fetch_all(
+                "SELECT ip, COUNT(*) as connections FROM active_connections GROUP BY ip"
+            )
+            ip = (
+                request.headers["cf-connecting-ip"]
+                if "cf-connecting-ip" in request.headers
+                else request.client.host
+            )
+            if any(
+                connection["ip"] == ip
+                and connection["connections"]
+                >= settings.PROXY_DEBRID_STREAM_MAX_CONNECTIONS
+                for connection in active_ip_connections
+            ):
+                return FileResponse("comet/assets/proxylimit.mp4")
+
             proxy = None
 
             class Streamer:
-                def __init__(self):
+                def __init__(self, id: str):
+                    self.id = id
+
                     self.client = httpx.AsyncClient(proxy=proxy)
                     self.response = None
 
@@ -496,6 +600,10 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
                             yield chunk
 
                 async def close(self):
+                    await database.execute(
+                        f"DELETE FROM active_connections WHERE id = '{self.id}'"
+                    )
+
                     if self.response is not None:
                         await self.response.aclose()
                     if self.client is not None:
@@ -507,14 +615,27 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
                 download_link, headers={"Range": range_header}
             )
             if response.status == 503 and config["debridService"] == "alldebrid":
-                proxy = settings.DEBRID_PROXY_URL  # proxy is not needed to proxy realdebrid stream
+                proxy = (
+                    settings.DEBRID_PROXY_URL
+                )  # proxy is not needed to proxy realdebrid stream
 
                 response = await session.head(
                     download_link, headers={"Range": range_header}, proxy=proxy
                 )
 
             if response.status == 206:
-                streamer = Streamer()
+                id = str(uuid.uuid4())
+                await database.execute(
+                    f"INSERT  {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}INTO active_connections (id, ip, content, timestamp) VALUES (:id, :ip, :content, :timestamp){' ON CONFLICT DO NOTHING' if settings.DATABASE_TYPE == 'postgresql' else ''}",
+                    {
+                        "id": id,
+                        "ip": ip,
+                        "content": str(response.url),
+                        "timestamp": current_time,
+                    },
+                )
+
+                streamer = Streamer(id)
 
                 return StreamingResponse(
                     streamer.stream_content({"Range": range_header}),

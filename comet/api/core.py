@@ -75,13 +75,14 @@ async def configure(request: Request):
         {
             "request": request,
             "CUSTOM_HEADER_HTML": settings.CUSTOM_HEADER_HTML
-            if settings.CUSTOM_HEADER_HTML and settings.CUSTOM_HEADER_HTML != "None"
+            if settings.CUSTOM_HEADER_HTML
             else "",
             "webConfig": web_config,
             "TOKEN": settings.TOKEN
             if settings.TOKEN else "",
             "URL_PREFIX": settings.URL_PREFIX
             if settings.URL_PREFIX else "",
+            "indexerManager": settings.INDEXER_MANAGER_TYPE,
             "proxyDebridStream": settings.PROXY_DEBRID_STREAM,
         },
     )

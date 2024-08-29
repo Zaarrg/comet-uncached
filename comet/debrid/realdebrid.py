@@ -266,10 +266,16 @@ class RealDebrid:
             default={"id": 1}
         )
         index = largest_file["id"]
-        await database.execute(
-            "UPDATE uncached_torrents SET torrentId = :torrent_id, data = json_set(data, '$.index', :index) WHERE hash = :hash",
-            {"torrent_id": torrent_id, "index": index, "hash": hash}
-        )
+        await database.execute(f"""
+        UPDATE uncached_torrents 
+        SET torrentId = :torrent_id, 
+            data = {'json_set' if settings.DATABASE_TYPE == 'sqlite' else 'jsonb_set'}(
+                {'data' if settings.DATABASE_TYPE == 'sqlite' else "CAST(data AS jsonb)"},
+                '{{index}}',
+                {'json(:index)' if settings.DATABASE_TYPE == 'sqlite' else 'to_jsonb(:index)'}
+            )
+        WHERE hash = :hash
+        """, {"torrent_id": torrent_id, "index": index, "hash": hash})
         # Skip unrestrict if no links available yet
         if len(magnet_info["links"]) == 0:
             logger.info(

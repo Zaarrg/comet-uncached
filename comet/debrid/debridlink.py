@@ -6,7 +6,7 @@ from aiohttp import FormData
 
 from comet.utils.general import is_video, check_uncached
 from comet.utils.logger import logger
-from comet.utils.models import database
+from comet.utils.models import database, settings
 
 
 class DebridLink:
@@ -192,10 +192,16 @@ class DebridLink:
 
             index = files.index(largest_file)
             torrent_id = largest_file['id']
-            await database.execute(
-                "UPDATE uncached_torrents SET torrentId = :torrent_id, data = json_set(data, '$.index', :index) WHERE hash = :hash",
-                {"torrent_id": torrent_id, "index": index, "hash": hash}
-            )
+            await database.execute(f"""
+            UPDATE uncached_torrents 
+            SET torrentId = :torrent_id, 
+                data = {'json_set' if settings.DATABASE_TYPE == 'sqlite' else 'jsonb_set'}(
+                    {'data' if settings.DATABASE_TYPE == 'sqlite' else "CAST(data AS jsonb)"},
+                    '{{index}}',
+                    {'json(:index)' if settings.DATABASE_TYPE == 'sqlite' else 'to_jsonb(:index)'}
+                )
+            WHERE hash = :hash
+            """, {"torrent_id": torrent_id, "index": index, "hash": hash})
             logger.info(
                 f"File {hash}|{index} is uncached, please wait until its cached! Is Downloaded: {largest_file['downloaded']} | Progress: {largest_file['downloadPercent']}%"
             )

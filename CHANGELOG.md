@@ -1,5 +1,74 @@
 # Changelog
 
+## [1.28.5](https://github.com/g0ldyy/comet/compare/v1.28.4...v1.28.5) (2024-08-29)
+
+
+### Bug Fixes
+
+* debrid download link caching not working in certain case ([271dbb6](https://github.com/g0ldyy/comet/commit/271dbb6f43481c509e7a74018d0c804c263eadcd))
+
+## [1.28.4](https://github.com/g0ldyy/comet/compare/v1.28.3...v1.28.4) (2024-08-28)
+
+
+### Bug Fixes
+
+* metadata ([809e32b](https://github.com/g0ldyy/comet/commit/809e32bb9c727076be12ab88b073b86213b50e12))
+
+## [1.28.3](https://github.com/g0ldyy/comet/compare/v1.28.2...v1.28.3) (2024-08-28)
+
+
+### Bug Fixes
+
+* sqlite download_link caching ([34c93c6](https://github.com/g0ldyy/comet/commit/34c93c6d3b0d77a8573e810e1f6cefff71a83e85))
+
+## [1.28.2](https://github.com/g0ldyy/comet/compare/v1.28.1...v1.28.2) (2024-08-28)
+
+
+### Bug Fixes
+
+* metadata retriever ([8f4e133](https://github.com/g0ldyy/comet/commit/8f4e13392ac65ce6b6d23f26f4bfafb629201574))
+
+## [1.28.1](https://github.com/g0ldyy/comet/compare/v1.28.0...v1.28.1) (2024-08-27)
+
+
+### Bug Fixes
+
+* typo causing errors ([7584af6](https://github.com/g0ldyy/comet/commit/7584af66dd19d3a2c089f75b9f6cf1646ddbc25c))
+
+## [1.28.0](https://github.com/g0ldyy/comet/compare/v1.27.1...v1.28.0) (2024-08-27)
+
+
+### Features
+
+* PostgreSQL support ([8f46d7f](https://github.com/g0ldyy/comet/commit/8f46d7f1829148190d27adf0d35ed64bf233d029))
+
+## [1.27.1](https://github.com/g0ldyy/comet/compare/v1.27.0...v1.27.1) (2024-08-27)
+
+
+### Bug Fixes
+
+* Jinja2 missing sometimes ([11a96b7](https://github.com/g0ldyy/comet/commit/11a96b705b29b7a8dd72d81c6d2f6957360bfea9))
+* jinja2????? ([55fe625](https://github.com/g0ldyy/comet/commit/55fe625c595ac2b8eea5ac3ee98219bbc6adeddf))
+
+## [1.27.0](https://github.com/g0ldyy/comet/compare/v1.26.0...v1.27.0) (2024-08-27)
+
+
+### Features
+
+* disable indexer select if indexer manager disabled ([2907a0e](https://github.com/g0ldyy/comet/commit/2907a0e25ca3da405b309e0c90ce7d191e7825f7))
+
+## [1.26.0](https://github.com/g0ldyy/comet/compare/v1.25.2...v1.26.0) (2024-08-27)
+
+
+### Features
+
+* new admin dashboard for debrid proxy stream + title year check + ip-based max connections for debrid proxy stream ([1d11ac4](https://github.com/g0ldyy/comet/commit/1d11ac46bde0c951ee0c3afa746e83a46bb8474f))
+
+
+### Bug Fixes
+
+* remove fullstacksample docker compose as it needs to be changed a lot ([7533ecb](https://github.com/g0ldyy/comet/commit/7533ecb4b08a349b25a1bce2e70b1481fc3407bd))
+
 ## [1.25.2](https://github.com/g0ldyy/comet/compare/v1.25.1...v1.25.2) (2024-08-16)
 
 
