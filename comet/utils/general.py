@@ -617,26 +617,31 @@ async def add_uncached_files(
         allowed_tracker_ids: list,
         database: Database
 ):
-    tracker_key = "Tracker" if settings.INDEXER_MANAGER_TYPE == 'prowlarr' else "TrackerId"
     allowed_tracker_ids_set = {tracker_id.lower() for tracker_id in allowed_tracker_ids}
     found_uncached = 0
     uncached_torrents = []
     current_timestamp = int(time.time())
 
     for torrent in torrents:
-        tracker = torrent.get(tracker_key, "").lower()
-        if tracker in allowed_tracker_ids_set:
+        tracker = torrent.get("Tracker", "")
+        tracker_id = torrent.get("TrackerId", "")
+
+        tracker_parts = tracker.split('|')
+        if len(tracker_parts) > 1:
+            tracker = tracker_parts[0]
+
+        if tracker.lower() in allowed_tracker_ids_set or tracker_id.lower() in allowed_tracker_ids_set:
             info_hash = torrent["InfoHash"]
             if info_hash not in files:
                 found_uncached += 1
                 torrent_data = {
                     "index": 1,
                     "title": torrent["Title"],
-                    "size": torrent["Size"],
+                    "size": torrent.get("Size") if torrent.get("Size") is not None else 0,
                     "uncached": True,
-                    "link": torrent["Link"],
-                    "magnet": torrent["MagnetUri"],
-                    "seeders": torrent.get("Seeders", 0)
+                    "link": torrent.get("Link", ""),
+                    "magnet": torrent.get("MagnetUri", ""),
+                    "seeders": torrent.get("Seeders") if torrent.get("Seeders") is not None else 0
                 }
                 # Update files and serialize data for database insertion
                 files[info_hash] = torrent_data
@@ -651,7 +656,7 @@ async def add_uncached_files(
 
     # Batch insert uncached torrents
     if uncached_torrents:
-        await database.execute(f"""
+        await database.execute_many(f"""
         INSERT {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}INTO uncached_torrents 
         (hash, torrentId, data, cacheKey, timestamp)
         VALUES (:hash, :torrentId, :data, :cacheKey, :timestamp)

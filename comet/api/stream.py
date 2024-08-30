@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import time
+import uuid
 import RTN.patterns
 import aiohttp
 import httpx
@@ -74,6 +75,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 )
                 get_metadata = await get_metadata.json()
                 name = get_metadata["data"]["attributes"]["canonicalTitle"]
+                titles_per_language = {'imdb': name}
                 season = 1
                 year = None
             else:
@@ -376,7 +378,9 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             episode,
             kitsu,
         )
-
+        logger.info(
+            f"{len(files)} cached files found on {config.get('debridService', '?')} for {log_name}"
+        )
         # Adds Uncached Files to files, based on config and cached results
         allowed_tracker_ids = config.get('indexersUncached', [])
         if allowed_tracker_ids:

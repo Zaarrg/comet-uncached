@@ -225,11 +225,11 @@ class RealDebrid:
         has_magnet = is_uncached.get('has_magnet', None)
 
         if not torrent_id:
-            if has_magnet:
-                torrent_id = await self.add_magnet(hash)
-            else:
-                torrent_link = is_uncached.get('torrent_link')
-                torrent_id = await self.add_file(torrent_link)
+            torrent_link = is_uncached.get('torrent_link')
+            torrent_id = await (
+                self.add_magnet(hash) if has_magnet or not torrent_link
+                else self.add_file(torrent_link)
+            )
 
         magnet_info = await self.get_info(torrent_id)
 
@@ -260,22 +260,29 @@ class RealDebrid:
                 f"Exception while selecting files, please visit debrid and select them manually for {hash}|{index}"
             )
         # Update the database with torrent_id and selected index
-        largest_file = max(
-            (file for file in magnet_info["files"] if file["selected"] == 1),
-            key=lambda x: x["bytes"],
-            default={"id": 1}
-        )
-        index = largest_file["id"]
-        await database.execute(f"""
-        UPDATE uncached_torrents 
-        SET torrentId = :torrent_id, 
-            data = {'json_set' if settings.DATABASE_TYPE == 'sqlite' else 'jsonb_set'}(
-                {'data' if settings.DATABASE_TYPE == 'sqlite' else "CAST(data AS jsonb)"},
-                '{{index}}',
-                {'json(:index)' if settings.DATABASE_TYPE == 'sqlite' else 'to_jsonb(:index)'}
-            )
-        WHERE hash = :hash
-        """, {"torrent_id": torrent_id, "index": index, "hash": hash})
+        largest_file_index = None
+        largest_file_size = 0
+        for index, file in enumerate(magnet_info["files"]):
+            if file["selected"] == 1 and file["bytes"] > largest_file_size:
+                largest_file_size = file["bytes"]
+                largest_file_index = index
+        index = largest_file_index if largest_file_index is not None else 0
+
+        if settings.DATABASE_TYPE == 'sqlite':
+            query = """
+            UPDATE uncached_torrents 
+            SET torrentId = :torrent_id, 
+                data = json_set(data, '$.index', json(:index))
+            WHERE hash = :hash
+            """
+        else:  # Assuming PostgreSQL
+            query = """
+                UPDATE uncached_torrents 
+                SET torrentId = :torrent_id, 
+                    data = data || jsonb_build_object('index', :index)
+                WHERE hash = :hash
+                """
+        await database.execute(query, {"torrent_id": torrent_id, "index": index, "hash": hash})
         # Skip unrestrict if no links available yet
         if len(magnet_info["links"]) == 0:
             logger.info(
