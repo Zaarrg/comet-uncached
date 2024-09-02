@@ -75,7 +75,6 @@ class ConfigModel(BaseModel):
     resolutions: List[str] = Field(default=["All"])
     resultFormat: List[str] = Field(default=["All"])
     resolutionsOrder: List[str] = Field(default_factory=list)
-    enhancedLanguageMatching: str = Field(default='False')
     sortType: str = Field(default='Sort_by_Rank')
     scrapingPreference: str = Field(default='tz')
     maxResults: int = Field(default=0, ge=0)

@@ -26,6 +26,7 @@ aiosqlite = "*"
 jinja2 = "*"
 rank-torrent-name = "*"
 parsett = "*"
+bencodepy = "^0.9.5"
 
 [tool.poetry.group.dev.dependencies]
 isort = "*"
