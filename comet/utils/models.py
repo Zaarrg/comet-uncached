@@ -105,6 +105,7 @@ class ConfigModel(BaseModel):
 
 
 rtn_settings = SettingsModel()
+rtn_settings.options["remove_ranks_under"] = -100000
 rtn_ranking = BestRanking()
 
 # For use anywhere

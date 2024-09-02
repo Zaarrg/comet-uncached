@@ -64,3 +64,4 @@
 - Add uncached support for other debrid services as uncached logic is now general enough for it to be nearly copy pasted
 - Add DEBRID_TAKE_FIRST support for the other services
 - Check jackett/prowlarr missing infohashes sometimes, probably rate limits?
+- Remove useless sorting options as there is now sorted_ranked_files = sort_torrents(ranked_files) used.
