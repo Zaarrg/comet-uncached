@@ -24,11 +24,11 @@ async def health():
 
 
 indexers = settings.INDEXER_MANAGER_INDEXERS
+languages = [language for language in PTT.parse.LANGUAGES_TRANSLATION_TABLE.values()]
+languages.insert(0, "Multi")
 web_config = {
     "indexers": [indexer.replace(" ", "_").lower() for indexer in indexers],
-    "languages": [
-        language for language in PTT.parse.LANGUAGES_TRANSLATION_TABLE.values()
-    ],
+    "languages": languages,
     "languagePreference": [
         language for language in PTT.parse.LANGUAGES_TRANSLATION_TABLE.values()
     ],

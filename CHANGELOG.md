@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.31.0](https://github.com/g0ldyy/comet/compare/v1.30.1...v1.31.0) (2024-09-01)
+
+
+### Features
+
+* realdebrid real ip ([479aa8e](https://github.com/g0ldyy/comet/commit/479aa8e527ebfeec01ffcde5c825b0a5af19538e))
+
+## [1.30.1](https://github.com/g0ldyy/comet/compare/v1.30.0...v1.30.1) (2024-08-31)
+
+
+### Bug Fixes
+
+* torrentio ([165cb25](https://github.com/g0ldyy/comet/commit/165cb256d2c4e27020eb775d52de299cddbdc0f5))
+* zilean ([6a272fc](https://github.com/g0ldyy/comet/commit/6a272fcf7638581a171ea7ea20aaa5854c3552cc))
+
+## [1.30.0](https://github.com/g0ldyy/comet/compare/v1.29.1...v1.30.0) (2024-08-31)
+
+
+### Features
+
+* add multi to languages ([da4d1d7](https://github.com/g0ldyy/comet/commit/da4d1d7cc2a4fc590c6acb0a7c0f43be9fc54568))
+
+## [1.29.1](https://github.com/g0ldyy/comet/compare/v1.29.0...v1.29.1) (2024-08-31)
+
+
+### Bug Fixes
+
+* improves prowlarr compatibility ([7c0ee96](https://github.com/g0ldyy/comet/commit/7c0ee96dafb4a14db02c66e8cfaf2dd5ac05273c))
+
 ## [1.29.0](https://github.com/g0ldyy/comet/compare/v1.28.5...v1.29.0) (2024-08-31)
 
 

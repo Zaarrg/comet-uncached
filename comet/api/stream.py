@@ -31,7 +31,7 @@ from comet.utils.general import (
     get_torrent_hash,
     translate,
     get_balanced_hashes,
-    format_title, add_uncached_files, get_localized_titles, is_video, get_language_codes
+    format_title, add_uncached_files, get_localized_titles, is_video, get_language_codes, get_client_ip
 )
 from comet.utils.logger import logger
 from comet.utils.models import database, rtn, settings
@@ -227,7 +227,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             )
             config["debridApiKey"] = settings.PROXY_DEBRID_STREAM_DEBRID_DEFAULT_APIKEY
 
-        debrid = getDebrid(session, config)
+        debrid = getDebrid(session, config, get_client_ip(request))
 
         check_premium = await debrid.check_premium()
         if not check_premium:
@@ -395,10 +395,10 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                     files[hash]["title"],
                     hash,  # , correct_title=name, remove_trash=True
                 )
+
+                ranked_files.add(ranked_file)
             except:
                 pass
-
-            ranked_files.add(ranked_file)
 
         sorted_ranked_files = sort_torrents(ranked_files)
 
@@ -425,10 +425,13 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             sorted_ranked_files[hash]["data"]["torrent_title"] = torrents_by_hash[hash]["Title"]
             sorted_ranked_files[hash]["data"]["tracker"] = torrents_by_hash[hash]["Tracker"]
             sorted_ranked_files[hash]["data"]["size"] = files[hash]["size"]
-            sorted_ranked_files[hash]["data"]["torrent_size"] = torrents_by_hash[hash]["Size"]
             sorted_ranked_files[hash]["data"]["uncached"] = files[hash]["uncached"]
             if torrents_by_hash[hash].get("Seeders"):
                 sorted_ranked_files[hash]["data"]["seeders"] = torrents_by_hash[hash].get("Seeders")
+            torrent_size = torrents_by_hash[hash]["Size"]
+            sorted_ranked_files[hash]["data"]["torrent_size"] = (
+                torrent_size if torrent_size else files[hash]["size"]
+            )
             sorted_ranked_files[hash]["data"]["index"] = files[hash]["index"]
 
         json_data = json.dumps(sorted_ranked_files).replace("'", "''")
@@ -537,8 +540,9 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
                     f"DELETE FROM download_links WHERE debrid_key = '{config['debridApiKey']}' AND hash = '{hash}' AND file_index = '{index}'"
                 )
 
+        ip = get_client_ip(request)
         if not download_link:
-            debrid = getDebrid(session, config)
+            debrid = getDebrid(session, config, ip)
             download_link = await debrid.generate_download_link(hash, index)
 
             if not download_link:
@@ -567,11 +571,6 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
         ):
             active_ip_connections = await database.fetch_all(
                 "SELECT ip, COUNT(*) as connections FROM active_connections GROUP BY ip"
-            )
-            ip = (
-                request.headers["cf-connecting-ip"]
-                if "cf-connecting-ip" in request.headers
-                else request.client.host
             )
             if any(
                 connection["ip"] == ip

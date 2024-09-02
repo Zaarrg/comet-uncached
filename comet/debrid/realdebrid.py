@@ -9,9 +9,10 @@ from comet.utils.models import settings, database
 
 
 class RealDebrid:
-    def __init__(self, session: aiohttp.ClientSession, debrid_api_key: str):
+    def __init__(self, session: aiohttp.ClientSession, debrid_api_key: str, ip: str):
         session.headers["Authorization"] = f"Bearer {debrid_api_key}"
         self.session = session
+        self.ip = ip
         self.proxy = None
 
         self.api_url = "https://api.real-debrid.com/rest/1.0"
@@ -147,7 +148,7 @@ class RealDebrid:
         # Handle magnet link as before
         add_magnet = await self.session.post(
             f"{self.api_url}/torrents/addMagnet",
-            data={"magnet": f"magnet:?xt=urn:btih:{hash}"},
+            data={"magnet": f"magnet:?xt=urn:btih:{hash}", "ip": self.ip},
             proxy=self.proxy,
         )
         add_magnet = await add_magnet.json()
@@ -199,7 +200,7 @@ class RealDebrid:
         # Get the unrestricted download link
         unrestrict_link = await self.session.post(
             f"{self.api_url}/unrestrict/link",
-            data={"link": magnet_info["links"][index - 1]},
+            data={"link": magnet_info["links"][index - 1], "ip": self.ip},
             proxy=self.proxy,
         )
         unrestrict_link = await unrestrict_link.json()
@@ -215,7 +216,8 @@ class RealDebrid:
                     str(file["id"])
                     for file in magnet_info["files"]
                     if is_video(file["path"])
-                )
+                ),
+                "ip": self.ip,
             },
             proxy=self.proxy,
         )

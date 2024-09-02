@@ -11,7 +11,7 @@ import aiohttp
 import bencodepy
 import asyncio
 
-from RTN import parse, title_match, Torrent
+from RTN import parse, title_match
 from aiohttp import ClientSession
 from curl_cffi import requests
 from databases import Database
@@ -19,12 +19,13 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from fastapi import Request
 
 from comet.utils.logger import logger
 from comet.utils.models import settings, ConfigModel, database
 
 languages_emojis = {
-    "dubbed": "🌎",
+    "multi": "🌎",  # Dubbed
     "en": "🇬🇧",  # English
     "ja": "🇯🇵",  # Japanese
     "zh": "🇨🇳",  # Chinese
@@ -415,40 +416,23 @@ async def get_zilean(
 ):
     results = []
     try:
-        if not season:
-            get_dmm = await session.post(
-                f"{settings.ZILEAN_URL}/dmm/search", json={"queryText": name}
-            )
-            get_dmm = await get_dmm.json()
+        show = f"&season={season}&episode={episode}"
+        get_dmm = await session.get(
+            f"{settings.ZILEAN_URL}/dmm/filtered?query={name}{show if season else ''}"
+        )
+        get_dmm = await get_dmm.json()
 
-            if isinstance(get_dmm, list):
-                take_first = get_dmm[: settings.ZILEAN_TAKE_FIRST]
-                for result in take_first:
-                    object = {
-                        "Title": result["raw_title"],
-                        "InfoHash": result["info_hash"],
-                        "Size": result["size"],
-                        "Tracker": "DMM",
-                    }
+        if isinstance(get_dmm, list):
+            take_first = get_dmm[: settings.ZILEAN_TAKE_FIRST]
+            for result in take_first:
+                object = {
+                    "Title": result["raw_title"],
+                    "InfoHash": result["info_hash"],
+                    "Size": result["size"],
+                    "Tracker": "DMM",
+                }
 
-                    results.append(object)
-        else:
-            get_dmm = await session.get(
-                f"{settings.ZILEAN_URL}/dmm/filtered?query={name}&season={season}&episode={episode}"
-            )
-            get_dmm = await get_dmm.json()
-
-            if isinstance(get_dmm, list):
-                take_first = get_dmm[: settings.ZILEAN_TAKE_FIRST]
-                for result in take_first:
-                    object = {
-                        "Title": result["raw_title"],
-                        "InfoHash": result["info_hash"],
-                        "Size": result["size"],
-                        "Tracker": "DMM",
-                    }
-
-                    results.append(object)
+                results.append(object)
 
         logger.info(f"{len(results)} torrents found for {log_name} using title {name} with Zilean")
     except Exception as e:
@@ -684,8 +668,10 @@ def get_balanced_hashes(hashes: dict, config: dict):
         if max_size != 0 and hash_info["size"] > max_size:
             continue
 
-        if not include_all_languages and not any(
-            lang in hash_info["languages"] for lang in config_languages
+        if (
+            not include_all_languages
+            and not any(lang in hash_info["languages"] for lang in config_languages)
+            and ("multi" not in languages if hash_info["dubbed"] else True)
         ):
             continue
 
@@ -915,11 +901,11 @@ def format_title(data: dict, config: dict):
 
     if "All" in config["resultFormat"] or "Languages" in config["resultFormat"]:
         languages = data["languages"]
+        if data["dubbed"]:
+            languages.insert(0, "multi")
         formatted_languages = (
             "/".join(get_language_emoji(language) for language in languages)
             if languages
-            else get_language_emoji("dubbed")
-            if data["dubbed"]
             else None
         )
         languages_str = "\n" + formatted_languages if formatted_languages else ""
@@ -930,3 +916,11 @@ def format_title(data: dict, config: dict):
         title = "Empty result format configuration"
 
     return title
+
+
+def get_client_ip(request: Request):
+    return (
+        request.headers["cf-connecting-ip"]
+        if "cf-connecting-ip" in request.headers
+        else request.client.host
+    )
