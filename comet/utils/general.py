@@ -6,8 +6,10 @@ import re
 import time
 import zlib
 
+import PTT
 import aiohttp
 import bencodepy
+import asyncio
 
 from RTN import parse, title_match, Torrent
 from aiohttp import ClientSession
@@ -22,57 +24,58 @@ from comet.utils.logger import logger
 from comet.utils.models import settings, ConfigModel, database
 
 languages_emojis = {
-    "multi_subs": "🌐",
-    "multi_audio": "🌎",
-    "dual_audio": "🔉",
-    "english": "🇬🇧",
-    "japanese": "🇯🇵",
-    "korean": "🇰🇷",
-    "taiwanese": "🇹🇼",
-    "chinese": "🇨🇳",
-    "french": "🇫🇷",
-    "latino": "💃🏻",
-    "spanish": "🇪🇸",
-    "portuguese": "🇵🇹",
-    "italian": "🇮🇹",
-    "greek": "🇬🇷",
-    "german": "🇩🇪",
-    "russian": "🇷🇺",
-    "ukrainian": "🇺🇦",
-    "hindi": "🇮🇳",
-    "telugu": "🇮🇳",
-    "tamil": "🇮🇳",
-    "lithuanian": "🇱🇹",
-    "latvian": "🇱🇻",
-    "estonian": "🇪🇪",
-    "polish": "🇵🇱",
-    "czech": "🇨🇿",
-    "slovakian": "🇸🇰",
-    "hungarian": "🇭🇺",
-    "romanian": "🇷🇴",
-    "bulgarian": "🇧🇬",
-    "serbian": "🇷🇸",
-    "croatian": "🇭🇷",
-    "slovenian": "🇸🇮",
-    "dutch": "🇳🇱",
-    "danish": "🇩🇰",
-    "finnish": "🇫🇮",
-    "swedish": "🇸🇪",
-    "norwegian": "🇳🇴",
-    "arabic": "🇸🇦",
-    "turkish": "🇹🇷",
-    "vietnamese": "🇻🇳",
-    "indonesian": "🇮🇩",
-    "thai": "🇹🇭",
-    "malay": "🇲🇾",
-    "hebrew": "🇮🇱",
-    "persian": "🇮🇷",
-    "bengali": "🇧🇩",
+    "dubbed": "🌎",
+    "en": "🇬🇧",  # English
+    "ja": "🇯🇵",  # Japanese
+    "zh": "🇨🇳",  # Chinese
+    "ru": "🇷🇺",  # Russian
+    "ar": "🇸🇦",  # Arabic
+    "pt": "🇵🇹",  # Portuguese
+    "es": "🇪🇸",  # Spanish
+    "fr": "🇫🇷",  # French
+    "de": "🇩🇪",  # German
+    "it": "🇮🇹",  # Italian
+    "ko": "🇰🇷",  # Korean
+    "hi": "🇮🇳",  # Hindi
+    "bn": "🇧🇩",  # Bengali
+    "pa": "🇵🇰",  # Punjabi
+    "mr": "🇮🇳",  # Marathi
+    "gu": "🇮🇳",  # Gujarati
+    "ta": "🇮🇳",  # Tamil
+    "te": "🇮🇳",  # Telugu
+    "kn": "🇮🇳",  # Kannada
+    "ml": "🇮🇳",  # Malayalam
+    "th": "🇹🇭",  # Thai
+    "vi": "🇻🇳",  # Vietnamese
+    "id": "🇮🇩",  # Indonesian
+    "tr": "🇹🇷",  # Turkish
+    "he": "🇮🇱",  # Hebrew
+    "fa": "🇮🇷",  # Persian
+    "uk": "🇺🇦",  # Ukrainian
+    "el": "🇬🇷",  # Greek
+    "lt": "🇱🇹",  # Lithuanian
+    "lv": "🇱🇻",  # Latvian
+    "et": "🇪🇪",  # Estonian
+    "pl": "🇵🇱",  # Polish
+    "cs": "🇨🇿",  # Czech
+    "sk": "🇸🇰",  # Slovak
+    "hu": "🇭🇺",  # Hungarian
+    "ro": "🇷🇴",  # Romanian
+    "bg": "🇧🇬",  # Bulgarian
+    "sr": "🇷🇸",  # Serbian
+    "hr": "🇭🇷",  # Croatian
+    "sl": "🇸🇮",  # Slovenian
+    "nl": "🇳🇱",  # Dutch
+    "da": "🇩🇰",  # Danish
+    "fi": "🇫🇮",  # Finnish
+    "sv": "🇸🇪",  # Swedish
+    "no": "🇳🇴",  # Norwegian
+    "ms": "🇲🇾",  # Malay
 }
 
 
 def get_language_emoji(language: str):
-    language_formatted = language.replace(" ", "_").lower()
+    language_formatted = language.lower()
     return (
         languages_emojis[language_formatted]
         if language_formatted in languages_emojis
@@ -238,84 +241,6 @@ def is_video(title: str):
     )
 
 
-lang_map = {
-    'eng': 'en', 'en': 'en', 'english': 'en',
-    'spa': 'es', 'es': 'es', 'spanish': 'es',
-    'fre': 'fr', 'fra': 'fr', 'fr': 'fr', 'french': 'fr',
-    'ger': 'de', 'deu': 'de', 'de': 'de', 'german': 'de',
-    'ita': 'it', 'it': 'it', 'italian': 'it',
-    'por': 'pt', 'pt': 'pt', 'portuguese': 'pt',
-    'rus': 'ru', 'ru': 'ru', 'russian': 'ru',
-    'jpn': 'ja', 'jap': 'ja', 'ja': 'ja', 'japanese': 'ja',
-    'chi': 'zh', 'zho': 'zh', 'zh': 'zh', 'chinese': 'zh',
-    'kor': 'ko', 'ko': 'ko', 'korean': 'ko',
-    'hin': 'hi', 'hi': 'hi', 'hindi': 'hi',
-    'tur': 'tr', 'tr': 'tr', 'turkish': 'tr',
-    'ara': 'ar', 'ar': 'ar', 'arabic': 'ar',
-    'pol': 'pl', 'pl': 'pl', 'polish': 'pl',
-    'dut': 'nl', 'nld': 'nl', 'nl': 'nl', 'dutch': 'nl',
-    'swe': 'sv', 'sv': 'sv', 'swedish': 'sv',
-    'dan': 'da', 'da': 'da', 'danish': 'da',
-    'nor': 'nb', 'norwegian': 'nb',
-    'fin': 'fi', 'fi': 'fi', 'finnish': 'fi',
-    'gre': 'el', 'ell': 'el', 'el': 'el', 'greek': 'el',
-    'hun': 'hu', 'hu': 'hu', 'hungarian': 'hu',
-    'cze': 'cs', 'ces': 'cs', 'cs': 'cs', 'czech': 'cs',
-    'rom': 'ro', 'ron': 'ro', 'ro': 'ro', 'romanian': 'ro',
-    'tha': 'th', 'th': 'th', 'thai': 'th',
-    'vie': 'vi', 'vi': 'vi', 'vietnamese': 'vi',
-    'ind': 'id', 'id': 'id', 'indonesian': 'id',
-    'heb': 'he', 'he': 'he', 'hebrew': 'he',
-    'ukr': 'uk', 'uk': 'uk', 'ukrainian': 'uk',
-    'per': 'fa', 'fas': 'fa', 'fa': 'fa', 'persian': 'fa',
-    'srp': 'sr', 'sr': 'sr', 'serbian': 'sr',
-    'hrv': 'hr', 'hr': 'hr', 'croatian': 'hr',
-    'bul': 'bg', 'bg': 'bg', 'bulgarian': 'bg',
-    'slk': 'sk', 'sk': 'sk', 'slovak': 'sk',
-    'slv': 'sl', 'sl': 'sl', 'slovenian': 'sl',
-    'lit': 'lt', 'lt': 'lt', 'lithuanian': 'lt',
-    'lav': 'lv', 'lv': 'lv', 'latvian': 'lv',
-    'est': 'et', 'et': 'et', 'estonian': 'et',
-    'tam': 'ta', 'ta': 'ta', 'tamil': 'ta',
-    'tel': 'te', 'te': 'te', 'telugu': 'te',
-    'urd': 'ur', 'ur': 'ur', 'urdu': 'ur',
-    'bn': 'bn', 'bengali': 'bn',
-    'may': 'ms', 'msa': 'ms', 'ms': 'ms', 'malay': 'ms',
-    'fil': 'tl', 'tl': 'tl', 'filipino': 'tl', 'tagalog': 'tl'
-}
-
-code_to_full_name = {v: k for k, v in lang_map.items() if len(k) > 3}
-pattern = re.compile(r'\b(?:[A-Za-z]{2,3}|[A-Za-z]{3,})(?:[.,+&/-](?:[A-Za-z]{2,3}|[A-Za-z]{3,}))*\b', re.IGNORECASE)
-
-
-def enhance_languages(torrent: Torrent):
-    raw_title = torrent['raw_title']
-    data = torrent['data']
-    existing_lang_codes = data.get('lang_codes', {})
-
-    new_lang_codes: set[str] = set()
-    for match in pattern.finditer(raw_title):
-        for lang in re.split(r'[.,+&/-]+', match.group(0)):
-            lang_code = lang_map.get(lang.lower())
-            if lang_code:
-                new_lang_codes.add(lang_code)
-
-    all_lang_codes = set(existing_lang_codes.values()).union(new_lang_codes)
-
-    updated_lang_codes = {}
-    full_names = []
-    for code in all_lang_codes:
-        full_name = code_to_full_name.get(code, '').capitalize()
-        if full_name:
-            updated_lang_codes[full_name] = code
-            full_names.append(full_name)
-
-    data['language'] = sorted(full_names)
-    data['lang_codes'] = updated_lang_codes
-
-    return torrent
-
-
 def bytes_to_size(bytes: int):
     sizes = ["Bytes", "KB", "MB", "GB", "TB"]
     if bytes == 0:
@@ -366,6 +291,16 @@ def is_encrypted(s: str) -> bool:
         return True
 
 
+def get_language_codes(languages):
+    def find_language_code(lang):
+        for code, name in PTT.parse.LANGUAGES_TRANSLATION_TABLE.items():
+            if name.lower() == lang.lower():
+                return code
+        return None
+
+    return [find_language_code(lang) for lang in languages]
+
+
 def config_check(config_data: str):
     try:
         if settings.TOKEN and is_encrypted(config_data):
@@ -404,19 +339,36 @@ async def get_indexer_manager(
     results = []
     try:
         indexers = [indexer.replace("_", " ") for indexer in indexers]
-        timeout = aiohttp.ClientTimeout(total=settings.INDEXER_MANAGER_TIMEOUT)
 
         if indexer_manager_type == "jackett":
-            response = await session.get(
-                f"{settings.INDEXER_MANAGER_URL}/api/v2.0/indexers/all/results?apikey={settings.INDEXER_MANAGER_API_KEY}&Query={query}&Tracker[]={'&Tracker[]='.join(indexer for indexer in indexers)}",
-                timeout=timeout,
-            )
-            response = await response.json()
 
-            for result in response["Results"]:
-                results.append(result)
+            async def fetch_jackett_results(
+                session: aiohttp.ClientSession, indexer: str, query: str
+            ):
+                try:
+                    async with session.get(
+                        f"{settings.INDEXER_MANAGER_URL}/api/v2.0/indexers/all/results?apikey={settings.INDEXER_MANAGER_API_KEY}&Query={query}&Tracker[]={indexer}",
+                        timeout=aiohttp.ClientTimeout(
+                            total=settings.INDEXER_MANAGER_TIMEOUT
+                        ),
+                    ) as response:
+                        response_json = await response.json()
+                        return response_json.get("Results", [])
+                except Exception as e:
+                    logger.warning(
+                        f"Exception while fetching Jackett results for indexer {indexer}: {e}"
+                    )
+                    return []
 
-        if indexer_manager_type == "prowlarr":
+            tasks = [
+                fetch_jackett_results(session, indexer, query) for indexer in indexers
+            ]
+            all_results = await asyncio.gather(*tasks)
+
+            for result_set in all_results:
+                results.extend(result_set)
+
+        elif indexer_manager_type == "prowlarr":
             get_indexers = await session.get(
                 f"{settings.INDEXER_MANAGER_URL}/api/v1/indexer",
                 headers={"X-Api-Key": settings.INDEXER_MANAGER_API_KEY},
@@ -571,7 +523,8 @@ async def filter(torrents: list, title_list: list, year: int):
             if not title_match(name, translate(parsed.parsed_title)):
                 continue
 
-            if year and parsed.year != 0 and year != parsed.year:
+            if year and parsed.year and year != parsed.year:
+                results.append((index, False))
                 continue
 
             results.append((index, True))
@@ -706,20 +659,23 @@ async def get_torrent_hash(session: aiohttp.ClientSession, torrent: tuple):
 
 def get_balanced_hashes(hashes: dict, config: dict):
     max_results = config["maxResults"]
+
     max_size = config["maxSize"]
-    config_resolutions = config["resolutions"]
+    config_resolutions = [resolution.lower() for resolution in config["resolutions"]]
     config_resolutions_order = config.get("resolutionsOrder", [])
-    config_languages = {
-        language.replace("_", " ").capitalize() for language in config["languages"]
-    }
+    include_all_resolutions = "all" in config_resolutions
     config_language_preference = {
         language.replace("_", " ").capitalize() for language in config["languagePreference"]
     }
-    include_all_languages = "All" in config_languages
-    include_all_resolutions = "All" in config_resolutions
-    include_unknown_resolution = (
-        include_all_resolutions or "Unknown" in config_resolutions
-    )
+
+    languages = [language.lower() for language in config["languages"]]
+    include_all_languages = "all" in languages
+    if not include_all_languages:
+        config_languages = [
+            code
+            for code, name in PTT.parse.LANGUAGES_TRANSLATION_TABLE.items()
+            if name.lower() in languages
+        ]
 
     hashes_by_resolution = {}
     for hash, hash_data in hashes.items():
@@ -728,28 +684,24 @@ def get_balanced_hashes(hashes: dict, config: dict):
         if max_size != 0 and hash_info["size"] > max_size:
             continue
 
-        if (
-            not include_all_languages
-            and not hash_info["is_multi_audio"]
-            and not any(lang in hash_info["language"] for lang in config_languages)
+        if not include_all_languages and not any(
+            lang in hash_info["languages"] for lang in config_languages
         ):
             continue
 
         resolution = hash_info["resolution"]
-        if not resolution:
-            if not include_unknown_resolution:
-                continue
-            resolution_key = "Unknown"
-        else:
-            resolution_key = resolution[0]
-            if not include_all_resolutions and resolution_key not in config_resolutions:
-                continue
-        if "Uncached" in config["resolutionsOrder"] and "Sort_by_Rank" not in config["sortType"]:
-            if hash_info.get("uncached", False):
-                resolution_key = "Uncached"
-        if resolution_key not in hashes_by_resolution:
-            hashes_by_resolution[resolution_key] = []
-        hashes_by_resolution[resolution_key].append(hash)
+        hash_info["resolution"] = hash_info["resolution"].capitalize()
+
+        if not include_all_resolutions and resolution not in config_resolutions:
+            continue
+
+        if hash_info['uncached'] and (include_all_resolutions or 'Uncached' in config_resolutions):
+            hash_info["resolution"] = 'Uncached'
+            resolution = 'Uncached'
+
+        if resolution not in hashes_by_resolution:
+            hashes_by_resolution[resolution] = []
+        hashes_by_resolution[resolution].append(hash)
 
     # Sorting
     hashes_by_resolution = apply_sorting(
@@ -875,23 +827,24 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
 
 def format_metadata(data: dict):
     extras = []
-    if data["hdr"] != "":
-        extras.append(data["hdr"] if data["hdr"] != "DV" else "Dolby Vision")
-    if data["remux"]:
-        extras.append("Remux")
-    if data["proper"]:
-        extras.append("Proper")
-    if data["repack"]:
-        extras.append("Repack")
-    if data["upscaled"]:
-        extras.append("Upscaled")
-    if data["remastered"]:
-        extras.append("Remastered")
-    if data["directorsCut"]:
-        extras.append("Director's Cut")
-    if data["extended"]:
-        extras.append("Extended")
-    return " | ".join(extras)
+    if data["quality"]:
+        extras.append(data["quality"])
+    if data["hdr"]:
+        extras.extend(data["hdr"])
+    if data["codec"]:
+        extras.append(data["codec"])
+    if data["audio"]:
+        extras.extend(data["audio"])
+    if data["channels"]:
+        extras.extend(data["channels"])
+    if data["bit_depth"]:
+        extras.append(data["bit_depth"])
+    if data["network"]:
+        extras.append(data["network"])
+    if data["group"]:
+        extras.append(data["group"])
+
+    return "|".join(extras)
 
 
 async def get_localized_titles(languages, id: str, session: ClientSession):
@@ -938,34 +891,42 @@ def extract_localized_titles(data: dict, languages):
 
 def format_title(data: dict, config: dict):
     title = ""
-    if "Title" in config["resultFormat"] or "All" in config["resultFormat"]:
+    if "All" in config["resultFormat"] or "Title" in config["resultFormat"]:
         title += f"{data['title']}\n"
-    if "Metadata" in config["resultFormat"] or "All" in config["resultFormat"]:
+
+    if "All" in config["resultFormat"] or "Metadata" in config["resultFormat"]:
         metadata = format_metadata(data)
         if metadata != "":
             title += f"💿 {metadata}\n"
-    if "Size" in config["resultFormat"] or "All" in config["resultFormat"]:
+
+    if "All" in config["resultFormat"] or "Size" in config["resultFormat"]:
         title += f"💾 {bytes_to_size(data['size'])} "
-    if "Tracker" in config["resultFormat"] or "All" in config["resultFormat"]:
+
+    if "All" in config["resultFormat"] or "Tracker" in config["resultFormat"]:
         title += f"🔎 {data['tracker'] if 'tracker' in data else '?'}"
-    if "Uncached" in config["resultFormat"] or "All" in config["resultFormat"]:
+
+    if "All" in config["resultFormat"] or "Uncached" in config["resultFormat"]:
         if data.get("uncached", False):
             title += "\n" + f"⚠️ Uncached"
-    if "Seeders" in config["resultFormat"] or "All" in config["resultFormat"] or data.get("uncached", True):
+
+    if "All" in config["resultFormat"] or "Seeders" in config["resultFormat"] or data.get("uncached", True):
         if data.get('seeders', None) is not None:
             title += f"🌱 {data.get('seeders')} Seeders"
-    if "Languages" in config["resultFormat"] or "All" in config["resultFormat"]:
-        languages = data["language"]
+
+    if "All" in config["resultFormat"] or "Languages" in config["resultFormat"]:
+        languages = data["languages"]
         formatted_languages = (
             "/".join(get_language_emoji(language) for language in languages)
             if languages
-            else get_language_emoji("multi_audio")
-            if data["is_multi_audio"]
+            else get_language_emoji("dubbed")
+            if data["dubbed"]
             else None
         )
         languages_str = "\n" + formatted_languages if formatted_languages else ""
         title += f"{languages_str}"
+
     if title == "":
         # Without this, Streamio shows SD as the result, which is confusing
         title = "Empty result format configuration"
+
     return title

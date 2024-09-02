@@ -1,3 +1,4 @@
+import PTT
 import RTN
 
 from fastapi import APIRouter, Request, HTTPException, Body
@@ -26,29 +27,15 @@ indexers = settings.INDEXER_MANAGER_INDEXERS
 web_config = {
     "indexers": [indexer.replace(" ", "_").lower() for indexer in indexers],
     "languages": [
-        language.replace(" ", "_")
-        for language in RTN.patterns.language_code_mapping.keys()
+        language for language in PTT.parse.LANGUAGES_TRANSLATION_TABLE.values()
     ],
     "languagePreference": [
-        language.replace(" ", "_")
-        for language in RTN.patterns.language_code_mapping.keys()
+        language for language in PTT.parse.LANGUAGES_TRANSLATION_TABLE.values()
     ],
     "searchLanguage": [
-        language.replace(" ", "_")
-        for language in RTN.patterns.language_code_mapping.keys()
-        if language.lower() not in ["multi subs", "multi audio", "dual audio"]
+        language for language in PTT.parse.LANGUAGES_TRANSLATION_TABLE.values()
     ],
-    "resolutions": [
-        "360p",
-        "480p",
-        "576p",
-        "720p",
-        "1080p",
-        "1440p",
-        "2160p",
-        "4K",
-        "Unknown",
-    ],
+    "resolutions": [resolution.value for resolution in RTN.models.Resolution] + ["Uncached"],
     "resultOrder": [
         "4K",
         "2160p",

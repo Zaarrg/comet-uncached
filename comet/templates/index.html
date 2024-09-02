@@ -574,12 +574,6 @@
                     </sl-select>
                 </div>
                 <div class="form-item">
-                    <sl-select id="enhancedLanguageMatching" label="Enhanced Language Matching" placeholder="Select to enable" help-text="Uses custom function on top of rtn to get more languages out of titles for even better language sorting" hoist value="False">
-                        <sl-option value="True">Enabled</sl-option>
-                        <sl-option value="False">Disabled</sl-option>
-                    </sl-select>
-                </div>
-                <div class="form-item">
                     <sl-select id="sortType" label="Result Sorting" hoist value="Sort_by_Rank"></sl-select>
                 </div>
                 <div class="form-item">
@@ -625,6 +619,55 @@
                 </sl-alert>
 
                 <script type="module">
+                    const languagesEmojis = {
+                        "English": "🇬🇧",
+                        "Japanese": "🇯🇵",
+                        "Chinese": "🇨🇳",
+                        "Russian": "🇷🇺",
+                        "Arabic": "🇸🇦",
+                        "Portuguese": "🇵🇹",
+                        "Spanish": "🇪🇸",
+                        "French": "🇫🇷",
+                        "German": "🇩🇪",
+                        "Italian": "🇮🇹",
+                        "Korean": "🇰🇷",
+                        "Hindi": "🇮🇳",
+                        "Bengali": "🇧🇩",
+                        "Punjabi": "🇵🇰",
+                        "Marathi": "🇮🇳",
+                        "Gujarati": "🇮🇳",
+                        "Tamil": "🇮🇳",
+                        "Telugu": "🇮🇳",
+                        "Kannada": "🇮🇳",
+                        "Malayalam": "🇮🇳",
+                        "Thai": "🇹🇭",
+                        "Vietnamese": "🇻🇳",
+                        "Indonesian": "🇮🇩",
+                        "Turkish": "🇹🇷",
+                        "Hebrew": "🇮🇱",
+                        "Persian": "🇮🇷",
+                        "Ukrainian": "🇺🇦",
+                        "Greek": "🇬🇷",
+                        "Lithuanian": "🇱🇹",
+                        "Latvian": "🇱🇻",
+                        "Estonian": "🇪🇪",
+                        "Polish": "🇵🇱",
+                        "Czech": "🇨🇿",
+                        "Slovak": "🇸🇰",
+                        "Hungarian": "🇭🇺",
+                        "Romanian": "🇷🇴",
+                        "Bulgarian": "🇧🇬",
+                        "Serbian": "🇷🇸",
+                        "Croatian": "🇭🇷",
+                        "Slovenian": "🇸🇮",
+                        "Dutch": "🇳🇱",
+                        "Danish": "🇩🇰",
+                        "Finnish": "🇫🇮",
+                        "Swedish": "🇸🇪",
+                        "Norwegian": "🇳🇴",
+                        "Malay": "🇲🇾",
+                    };
+
                     let defaultLanguages = [];
                     let defaultResolutions = [];
                     let defaultResultFormat = [];
@@ -725,10 +768,23 @@
                         options.forEach(option => {
                             const optionElement = document.createElement("sl-option");
                             optionElement.value = option;
-                            optionElement.textContent = option.toString().replaceAll("_", " ");
+
+
+                            if (selectId === "languages") {
+                                // For languages, prepend the flag emoji if it exists
+                                const flag = languagesEmojis[option] || '';
+                                optionElement.textContent = `${flag} ${option}`;
+                            } else {
+                                // For other selects, just use the option text as is
+                                optionElement.textContent = option;
+                            }
+
+
                             selectElement.appendChild(optionElement);
                         });
-                        selectElement.value = options;
+
+                        // Set the default value
+                        selectElement.value = options; // Assuming first option as default
                     }
 
                     const installButton = document.querySelector("#install");
@@ -751,7 +807,6 @@
                         const scrapingPreference = document.getElementById("scrapingPreference").value;
                         const debridService = document.getElementById("debridService").value;
                         const debridApiKey = document.getElementById("debridApiKey").value;
-                        const enhancedLanguageMatching = document.getElementById("enhancedLanguageMatching").value;
                         const debridStreamProxyPassword = document.getElementById("debridStreamProxyPassword").value;
                         const selectedLanguages = languages.length === defaultLanguages.length && languages.every((val, index) => val === defaultLanguages[index]) ? ["All"] : languages;
                         const selectedResolutions = resolutions.length === defaultResolutions.length && resolutions.every((val, index) => val === defaultResolutions[index]) ? ["All"] : resolutions;
@@ -769,7 +824,6 @@
                             scrapingPreference: scrapingPreference,
                             languages: selectedLanguages,
                             languagePreference: languagePreference,
-                            enhancedLanguageMatching: enhancedLanguageMatching,
                             searchLanguage: searchLanguage,
                             debridService: debridService,
                             debridApiKey: debridApiKey,
@@ -843,7 +897,6 @@
                         document.getElementById("sortType").value = settings.sortType;
                         document.getElementById("scrapingPreference").value = settings.scrapingPreference;
                         document.getElementById("languagePreference").value = settings.languagePreference;
-                        document.getElementById("enhancedLanguageMatching").value = settings.enhancedLanguageMatching;
                         document.getElementById("searchLanguage").value = settings.searchLanguage;
                         if (settings.languages != "All")
                             document.getElementById("languages").value = settings.languages;

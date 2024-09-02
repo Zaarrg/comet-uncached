@@ -3,7 +3,6 @@ import hashlib
 import json
 import time
 import uuid
-import RTN.patterns
 import aiohttp
 import httpx
 
@@ -32,7 +31,7 @@ from comet.utils.general import (
     get_torrent_hash,
     translate,
     get_balanced_hashes,
-    format_title, add_uncached_files, get_localized_titles, enhance_languages, is_video
+    format_title, add_uncached_files, get_localized_titles, is_video, get_language_codes
 )
 from comet.utils.logger import logger
 from comet.utils.models import database, rtn, settings
@@ -75,7 +74,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 )
                 get_metadata = await get_metadata.json()
                 name = get_metadata["data"]["attributes"]["canonicalTitle"]
-                titles_per_language = {'imdb': name}
+                titles_per_language = {'default': name}
                 season = 1
                 year = None
             else:
@@ -84,8 +83,12 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 )
                 metadata = await get_metadata.json()
                 element = metadata["d"][
-                    0 if metadata["d"][0]["id"] not in ["/imdbpicks/summer-watch-guide", "/emmys"] else 1
+                    0
+                    if metadata["d"][0]["id"]
+                    not in ["/imdbpicks/summer-watch-guide", "/emmys"]
+                    else 1
                 ]
+
                 for element in metadata["d"]:
                     if element["id"] == id:
                         break
@@ -94,9 +97,9 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 year = element["y"]
                 titles_per_language = {}
                 if config.get('searchLanguage') and config['searchLanguage']:
-                    language_codes = list(RTN.patterns.get_language_codes(config['searchLanguage']).values())
+                    language_codes = get_language_codes(config['searchLanguage'])
                     titles_per_language = await get_localized_titles(language_codes, id, session)
-                titles_per_language['imdb'] = name
+                titles_per_language['default'] = name
         except Exception as e:
             logger.warning(f"Exception while getting metadata for {id}: {e}")
 
@@ -113,7 +116,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         titles_per_language = {lang: translate(name) for lang, name in titles_per_language.items()}
         titles_per_language_list = list(set(titles_per_language.values()))
 
-        name_imdb = titles_per_language.get('imdb')
+        name_imdb = titles_per_language.get('default')
         log_name = name_imdb
         if type == "series":
             log_name = f"{name_imdb} S0{season}E0{episode}"
@@ -191,10 +194,9 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                         if hash in sorted_ranked_files:
                             hash_data = sorted_ranked_files[hash]
                             data = hash_data["data"]
-                            file_extension = next(('.' + ext for ext in data["raw_title"].split('.')[::-1] if is_video('.' + ext)), '')
                             results.append(
                                 {
-                                    "name": f"[{debrid_extension}⚡] Comet {data['resolution'][0] if data['resolution'] != [] else 'Unknown'}",
+                                    "name": f"[{debrid_extension}⚡] Comet {data['resolution']}",
                                     "title": format_title(data, config),
                                     "torrentTitle": (
                                         data["torrent_title"]
@@ -206,7 +208,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                                         if "torrent_size" in data
                                         else None
                                     ),
-                                    "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{b64config}/playback/{hash}/{data['index']}{file_extension}",
+                                    "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{b64config}/playback/{hash}/{data['index']}",
                                 }
                             )
 
@@ -274,7 +276,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             )
         else:
             logger.info(
-                f"No indexer {'manager ' if not indexer_manager_type else ' '}{'selected by user' if indexer_manager_type else 'defined'} for {log_name}"
+                f"No indexer {'manager ' if not indexer_manager_type else ''}{'selected by user' if indexer_manager_type else 'defined'} for {log_name}"
             )
 
         titles_per_language_list = list(dict.fromkeys(title.replace('-', ' ').replace('_', ' ') for title in reversed(titles_per_language_list)))[::-1]
@@ -388,32 +390,30 @@ async def stream(request: Request, b64config: str, type: str, id: str):
 
         ranked_files = set()
         for hash in files:
-            # try:
-            ranked_file = rtn.rank(
-                files[hash]["title"],
-                hash,  # , correct_title=name, remove_trash=True
-            )
-            # except:
-            #     continue
+            try:
+                ranked_file = rtn.rank(
+                    files[hash]["title"],
+                    hash,  # , correct_title=name, remove_trash=True
+                )
+            except:
+                pass
 
             ranked_files.add(ranked_file)
 
         sorted_ranked_files = sort_torrents(ranked_files)
 
-        if len(sorted_ranked_files) == 0:
+        len_sorted_ranked_files = len(sorted_ranked_files)
+        logger.info(
+            f"{len_sorted_ranked_files} cached files found on {config['debridService']} for {log_name}"
+        )
+
+        if len_sorted_ranked_files == 0:
             return {"streams": []}
 
         sorted_ranked_files = {
             key: (value.model_dump() if isinstance(value, Torrent) else value)
             for key, value in sorted_ranked_files.items()
         }
-
-        if config['enhancedLanguageMatching'] == 'True':
-            logger.info(
-                f"Running enhanced Language Title Matching"
-            )
-            for hash in sorted_ranked_files:
-                sorted_ranked_files[hash] = enhance_languages(sorted_ranked_files[hash])
 
         logger.info(
             f"{len(sorted_ranked_files)} cached files found on {config['debridService']} for {log_name}"
@@ -463,14 +463,13 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 if hash in sorted_ranked_files:
                     hash_data = sorted_ranked_files[hash]
                     data = hash_data["data"]
-                    file_extension = next(('.' + ext for ext in data["raw_title"].split('.')[::-1] if is_video('.' + ext)), '')
                     results.append(
                         {
-                            "name": f"[{debrid_extension}⚡] Comet {data['resolution'][0] if data['resolution'] != [] else 'Unknown'}",
+                            "name": f"[{debrid_extension}⚡] Comet {data['resolution']}",
                             "title": format_title(data, config),
                             "torrentTitle": data["torrent_title"],
                             "torrentSize": data["torrent_size"],
-                            "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{b64config}/playback/{hash}/{data['index']}{file_extension}",
+                            "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{b64config}/playback/{hash}/{data['index']}",
                         }
                     )
         return {"streams": results}
@@ -512,16 +511,11 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
 
     if (
         settings.PROXY_DEBRID_STREAM
-        and settings.PROXY_DEBRID_STREAM_PASSWORD
-        == config["debridStreamProxyPassword"]
+        and settings.PROXY_DEBRID_STREAM_PASSWORD == config["debridStreamProxyPassword"]
         and config["debridApiKey"] == ""
     ):
-        config["debridService"] = (
-            settings.PROXY_DEBRID_STREAM_DEBRID_DEFAULT_SERVICE
-        )
-        config["debridApiKey"] = (
-            settings.PROXY_DEBRID_STREAM_DEBRID_DEFAULT_APIKEY
-        )
+        config["debridService"] = settings.PROXY_DEBRID_STREAM_DEBRID_DEFAULT_SERVICE
+        config["debridApiKey"] = settings.PROXY_DEBRID_STREAM_DEBRID_DEFAULT_APIKEY
 
     async with aiohttp.ClientSession() as session:
         # Check for cached download link
@@ -585,7 +579,7 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
                 >= settings.PROXY_DEBRID_STREAM_MAX_CONNECTIONS
                 for connection in active_ip_connections
             ):
-                return FileResponse("comet/assets/proxylimit.mp4")
+                return RedirectResponse(f"{base_url}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/assets/proxylimit.mp4", status_code=302)
 
             proxy = None
 
