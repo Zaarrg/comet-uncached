@@ -72,8 +72,8 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 get_metadata = await session.get(
                     f"https://kitsu.io/api/edge/anime/{season}"
                 )
-                get_metadata = await get_metadata.json()
-                name = get_metadata["data"]["attributes"]["canonicalTitle"]
+                metadata = await get_metadata.json()
+                name = metadata["data"]["attributes"]["canonicalTitle"]
                 titles_per_language = {'default': name}
                 season = 1
                 year = None
@@ -90,7 +90,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 ]
 
                 for element in metadata["d"]:
-                    if element["id"] == id:
+                    if "/" not in element["id"]:
                         break
 
                 name = element["l"]
