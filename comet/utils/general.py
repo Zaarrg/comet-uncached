@@ -302,6 +302,21 @@ def get_language_codes(languages):
     return [find_language_code(lang) for lang in languages]
 
 
+def language_to_country_code(lang_codes):
+    lang_to_country = {
+        "en": "US", "ja": "JP", "zh": "CN", "ru": "RU", "ar": "SA", "pt": "PT",
+        "es": "ES", "fr": "FR", "de": "DE", "it": "IT", "ko": "KR", "hi": "IN",
+        "bn": "BD", "pa": "IN", "mr": "IN", "gu": "IN", "ta": "IN", "te": "IN",
+        "kn": "IN", "ml": "IN", "th": "TH", "vi": "VN", "id": "ID", "tr": "TR",
+        "he": "IL", "fa": "IR", "uk": "UA", "el": "GR", "lt": "LT", "lv": "LV",
+        "et": "EE", "pl": "PL", "cs": "CZ", "sk": "SK", "hu": "HU", "ro": "RO",
+        "bg": "BG", "sr": "RS", "hr": "HR", "sl": "SI", "nl": "NL", "da": "DK",
+        "fi": "FI", "sv": "SE", "no": "NO", "ms": "MY"
+    }
+
+    return [lang_to_country.get(code, code.upper()) for code in lang_codes]
+
+
 def config_check(config_data: str):
     try:
         if settings.TOKEN and is_encrypted(config_data):
@@ -833,7 +848,7 @@ def format_metadata(data: dict):
     return "|".join(extras)
 
 
-async def get_localized_titles(languages, id: str, session: ClientSession):
+async def get_localized_titles(language_codes, country_codes, id: str, session: ClientSession):
     headers = {
         "content-type": "application/json"
     }
@@ -851,19 +866,21 @@ async def get_localized_titles(languages, id: str, session: ClientSession):
         return []
     localized_titles = await gathered_localized_titles.json()
 
-    return extract_localized_titles(localized_titles, languages)
+    return extract_localized_titles(localized_titles, language_codes, country_codes)
 
 
-def extract_localized_titles(data: dict, languages):
+def extract_localized_titles(data: dict, language_codes, country_codes):
     results = {}
     edges = data.get('data', {}).get('title', {}).get('akas', {}).get('edges', [])
 
     for edge in edges:
         node = edge.get('node', {})
         country = node.get('country', {})
-        country_id = country.get('id', '').lower() if country else ''
+        language = node.get('language', {})
+        country_id = country.get('id', '') if country else ''
+        language_id = language.get('id', '') if language else ''
 
-        if country_id in languages:
+        if language_id in language_codes or country_id in country_codes:
             display_prop = node.get('displayableProperty', {})
             title = display_prop.get('value', {}).get('plainText', '')
             qualifiers = display_prop.get('qualifiersInMarkdownList') or []

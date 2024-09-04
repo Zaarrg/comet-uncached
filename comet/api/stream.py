@@ -13,12 +13,11 @@ from fastapi import APIRouter, Request, Header
 from fastapi.responses import (
     RedirectResponse,
     StreamingResponse,
-    FileResponse,
     Response,
 )
 
 from starlette.background import BackgroundTask
-from RTN import Torrent, sort_torrents
+from RTN import Torrent
 
 from comet.debrid.manager import getDebrid
 from comet.utils.general import (
@@ -31,7 +30,8 @@ from comet.utils.general import (
     get_torrent_hash,
     translate,
     get_balanced_hashes,
-    format_title, add_uncached_files, get_localized_titles, is_video, get_language_codes, get_client_ip
+    format_title, add_uncached_files, get_localized_titles, get_language_codes, get_client_ip,
+    language_to_country_code
 )
 from comet.utils.logger import logger
 from comet.utils.models import database, rtn, settings
@@ -98,7 +98,8 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                 titles_per_language = {}
                 if config.get('searchLanguage') and config['searchLanguage']:
                     language_codes = get_language_codes(config['searchLanguage'])
-                    titles_per_language = await get_localized_titles(language_codes, id, session)
+                    country_codes = language_to_country_code(language_codes)
+                    titles_per_language = await get_localized_titles(language_codes, country_codes, id, session)
                 titles_per_language['default'] = name
         except Exception as e:
             logger.warning(f"Exception while getting metadata for {id}: {e}")
@@ -112,9 +113,9 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                     }
                 ]
             }
-
+        # Remove duplicate titles
         titles_per_language = {lang: translate(name) for lang, name in titles_per_language.items()}
-        titles_per_language_list = list(set(titles_per_language.values()))
+        titles_per_language_list = list({title.lower(): title for title in titles_per_language.values()}.values())
 
         name_imdb = titles_per_language.get('default')
         log_name = name_imdb
@@ -467,7 +468,6 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             for hash in hash_list:
                 if hash in sorted_ranked_files:
                     hash_data = sorted_ranked_files[hash]
-                    print(hash_data)
                     data = hash_data["data"]
                     results.append(
                         {

@@ -62,6 +62,10 @@
 - Adjusted sorting, now sorts available ```"Sort_by_Resolution_then_Rank", "Sort_by_Resolution_then_Seeders", "Sort_by_Resolution_then_Size"```
 - Added behaviorHints to stream metadata like bingeGroup and filename. Allows skip/next button on tv shows to work and some better compatibility with players
 
+### Update 5.2
+- Fixed language search using language codes to check country codes
+  - Now uses country codes and language codes to find the correct title
+- Fixed langauge search not removing dupes because of case insensitivity
 ---
 ### List of new envs
 - UNCACHED_TTL - Time when uncached results that started downloading and never finished or where never watched will be deleted out of cache
