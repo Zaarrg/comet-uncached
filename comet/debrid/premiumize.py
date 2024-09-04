@@ -3,7 +3,7 @@ import asyncio
 
 from RTN import parse
 
-from comet.utils.general import is_video
+from comet.utils.general import is_video, check_completion
 from comet.utils.logger import logger
 
 
@@ -49,8 +49,9 @@ class Premiumize:
             )
 
     async def get_files(
-        self, torrent_hashes: list, type: str, season: str, episode: str, kitsu: bool
+        self, torrents_by_hashes: dict, type: str, season: str, episode: str, kitsu: bool
     ):
+        torrent_hashes = list(torrents_by_hashes.keys())
         chunk_size = 100
         chunks = [
             torrent_hashes[i : i + chunk_size]
@@ -100,10 +101,13 @@ class Premiumize:
                         if season not in filename_parsed.seasons:
                             continue
 
+                    torrent_name_parsed = parse(torrents_by_hashes[hashes[index]]["Title"])
                     files[hashes[index]] = {
                         "index": f"{season}|{episode}",
                         "title": filename,
                         "size": int(filesizes[index]),
+                        "uncached": False,
+                        "complete": torrent_name_parsed.complete or check_completion(torrent_name_parsed.raw_title, season),
                     }
         else:
             for result in availability:
@@ -126,6 +130,7 @@ class Premiumize:
                         "index": 0,
                         "title": filename,
                         "size": int(filesizes[index]),
+                        "uncached": False,
                     }
 
         return files

@@ -66,12 +66,30 @@
 - Fixed language search using language codes to check country codes
   - Now uses country codes and language codes to find the correct title
 - Fixed langauge search not removing dupes because of case insensitivity
+
+### Update 5.3
+- Added sortPreference option for later on sorting by for example codec and more
+- Added to sortPreference Completion Sorting and to Result Format
+  - Allows for sorting torrents that have the whole season to the top
+  - Also shows this in the Result Format Title if enabled
+- Added uncached property to other debrid services
+- Added complete key to files returned for tv shows from debrid services to allow for completion sorting
+- Added check_completion function to check if a torrent is the whole season (complete: true)
+- Added tiebreaker for sort by resolution to be size property (seeders prop is not always present)
+- Adjusted format title as in some cases to many newlines where present and stremio would cut infos
+  
 ---
 ### List of new envs
 - UNCACHED_TTL - Time when uncached results that started downloading and never finished or where never watched will be deleted out of cache
 - DEBRID_TAKE_FIRST - Returns this amount of results straight from debrid then runs through title match check
 - URL_PREFIX - Prefix to use for all endpoints like "/comet"
 - TOKEN - Token to use for encryption/decryption of config in url
+
+### Sorting Order
+- The sorting does have a fixed order
+- If Sort_by_Resolution_then_Rank and SortPreference Completion and a Language Preference selected then:
+- Sort_by_Resolution_then_Rank then Completion torrents to the top, then those sorted by rank/seeders or size depending on initial sort then language preference to the top in order of selection in configuration
+- All the second and tertiary sorting happens inside the resolution itself
 
 ### Still need to do:
 - About FileResponse: Does not work in stremio app. Issue with headers/redirect. Works when range headers added. Issue when range headers added multiple calls of generate_download_link, fix is redirect to separate endpoint.

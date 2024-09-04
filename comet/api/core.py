@@ -48,8 +48,9 @@ web_config = {
         "Uncached",
         "Unknown",
     ],
-    "resultFormat": ["Title", "Metadata", "Size", "Tracker", "Uncached", "Seeders", "Languages"],
+    "resultFormat": ["Title", "Metadata", "Size", "Tracker", "Uncached", "Seeders", "Complete", "Languages"],
     "sortType": ["Sort_by_Resolution_then_Rank", "Sort_by_Resolution_then_Seeders", "Sort_by_Resolution_then_Size"],
+    "sortPreference": ["Completion", "Disabled"],
     "urlPrefix": settings.URL_PREFIX if settings.URL_PREFIX else "",
 }
 

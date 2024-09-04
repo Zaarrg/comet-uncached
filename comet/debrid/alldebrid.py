@@ -3,7 +3,7 @@ import asyncio
 
 from RTN import parse
 
-from comet.utils.general import is_video
+from comet.utils.general import is_video, check_completion
 from comet.utils.logger import logger
 from comet.utils.models import settings
 
@@ -44,8 +44,9 @@ class AllDebrid:
             )
 
     async def get_files(
-        self, torrent_hashes: list, type: str, season: str, episode: str, kitsu: bool
+        self, torrents_by_hashes: list, type: str, season: str, episode: str, kitsu: bool
     ):
+        torrent_hashes = list(torrents_by_hashes.keys())
         chunk_size = 500
         chunks = [
             torrent_hashes[i : i + chunk_size]
@@ -92,10 +93,13 @@ class AllDebrid:
                             if season not in filename_parsed.seasons:
                                 continue
 
+                        torrent_name_parsed = parse(torrents_by_hashes[magnet["hash"]]["Title"])
                         files[magnet["hash"]] = {
                             "index": magnet["files"].index(file),
                             "title": filename,
                             "size": file["e"][0]["s"] if pack else file["s"],
+                            "uncached": False,
+                            "complete": torrent_name_parsed.complete or check_completion(torrent_name_parsed.raw_title, season),
                         }
 
                         break
@@ -118,6 +122,7 @@ class AllDebrid:
                             "index": magnet["files"].index(file),
                             "title": filename,
                             "size": file["s"],
+                            "uncached": False,
                         }
 
                         break

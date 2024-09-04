@@ -577,6 +577,9 @@
                     <sl-select id="sortType" label="Result Sorting" hoist value="Sort_by_Resolution_then_Rank"></sl-select>
                 </div>
                 <div class="form-item">
+                    <sl-select id="sortPreference" placeholder="Select even more advance sorting" label="Sorting Preference" hoist value="Disabled"></sl-select>
+                </div>
+                <div class="form-item">
                     <sl-radio-group  id="scrapingPreference" label="Scraping Preference" hoist value="tz">
                         <sl-radio-button value="tz">Enable Torrentio & Zilean</sl-radio-button>
                         <sl-radio-button value="t">Enable Torrentio</sl-radio-button>
@@ -693,6 +696,7 @@
                         populateSelect("resultFormat", webConfig.resultFormat);
                         populateSelect("resolutionsOrder", webConfig.resultOrder);
                         populateSelect("sortType", webConfig.sortType);
+                        populateSelect("sortPreference", webConfig.sortPreference);
                         populateSelect("languagePreference", webConfig.languagePreference)
                         populateSelect("searchLanguage", webConfig.searchLanguage)
                         //Set Default for languagePreference, searchLanguage
@@ -805,6 +809,7 @@
                         const resultFormat = Array.from(document.getElementById("resultFormat").selectedOptions).map(option => option.value);
                         const resolutionsOrder = Array.from(document.getElementById("resolutionsOrder").selectedOptions).map(option => option.value);
                         const sortType = document.getElementById("sortType").value;
+                        const sortPreference = document.getElementById("sortPreference").value;
                         const scrapingPreference = document.getElementById("scrapingPreference").value;
                         const debridService = document.getElementById("debridService").value;
                         const debridApiKey = document.getElementById("debridApiKey").value;
@@ -822,6 +827,7 @@
                             resolutions: selectedResolutions,
                             resolutionsOrder: resolutionsOrder,
                             sortType: sortType,
+                            sortPreference: sortPreference,
                             scrapingPreference: scrapingPreference,
                             languages: selectedLanguages,
                             languagePreference: languagePreference,
@@ -896,6 +902,7 @@
                         document.getElementById("indexersUncached").value = settings.indexersUncached;
                         setOrderedMultiSelectValue("resolutionsOrder", settings.resolutionsOrder);
                         document.getElementById("sortType").value = settings.sortType;
+                        document.getElementById("sortPreference").value = settings.sortPreference;
                         document.getElementById("scrapingPreference").value = settings.scrapingPreference;
                         document.getElementById("languagePreference").value = settings.languagePreference;
                         document.getElementById("searchLanguage").value = settings.searchLanguage;

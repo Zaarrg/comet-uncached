@@ -76,6 +76,7 @@ class ConfigModel(BaseModel):
     resultFormat: List[str] = Field(default=["All"])
     resolutionsOrder: List[str] = Field(default_factory=list)
     sortType: str = Field(default='Sort_by_Resolution_then_Rank')
+    sortPreference: str = Field(default='Completion')
     scrapingPreference: str = Field(default='tz')
     maxResults: int = Field(default=0, ge=0)
     maxSize: float = Field(default=0, ge=0)

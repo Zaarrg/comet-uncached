@@ -3,7 +3,7 @@ import asyncio
 
 from RTN import parse
 
-from comet.utils.general import is_video
+from comet.utils.general import is_video, check_completion
 from comet.utils.logger import logger
 
 
@@ -41,8 +41,9 @@ class TorBox:
             )
 
     async def get_files(
-        self, torrent_hashes: list, type: str, season: str, episode: str, kitsu: bool
+        self, torrents_by_hashes: dict, type: str, season: str, episode: str, kitsu: bool
     ):
+        torrent_hashes = list(torrents_by_hashes.keys())
         chunk_size = 100
         chunks = [
             torrent_hashes[i : i + chunk_size]
@@ -83,10 +84,13 @@ class TorBox:
                             if season not in filename_parsed.seasons:
                                 continue
 
+                        torrent_name_parsed = parse(torrents_by_hashes[torrent["hash"]]["Title"])
                         files[torrent["hash"]] = {
                             "index": torrent_files.index(file),
                             "title": filename,
                             "size": file["size"],
+                            "uncached": False,
+                            "complete": torrent_name_parsed.complete or check_completion(torrent_name_parsed.raw_title, season),
                         }
 
                         break
@@ -107,6 +111,7 @@ class TorBox:
                             "index": torrent_files.index(file),
                             "title": filename,
                             "size": file["size"],
+                            "uncached": False,
                         }
 
                         break

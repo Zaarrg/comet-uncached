@@ -173,7 +173,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
 
                 debrid_extension = get_debrid_extension(config["debridService"])
 
-                balanced_hashes = get_balanced_hashes(sorted_ranked_files, config)
+                balanced_hashes = get_balanced_hashes(sorted_ranked_files, config, type)
 
                 results = []
                 if (
@@ -378,8 +378,9 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         if len(torrents) == 0:
             return {"streams": []}
 
+        torrents_by_hash = {torrent['InfoHash']: torrent for torrent in torrents if torrent['InfoHash'] is not None}
         files = await debrid.get_files(
-            [hash[1] for hash in torrent_hashes if hash[1] is not None],
+            torrents_by_hash,
             type,
             season,
             episode,
@@ -422,13 +423,14 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             f"{len(sorted_ranked_files)} cached files found on {config['debridService']} for {log_name}"
         )
 
-        torrents_by_hash = {torrent["InfoHash"]: torrent for torrent in torrents}
         for hash in sorted_ranked_files:  # needed for caching
             sorted_ranked_files[hash]["data"]["title"] = files[hash]["title"]
             sorted_ranked_files[hash]["data"]["torrent_title"] = torrents_by_hash[hash]["Title"]
             sorted_ranked_files[hash]["data"]["tracker"] = torrents_by_hash[hash]["Tracker"]
             sorted_ranked_files[hash]["data"]["size"] = files[hash]["size"]
             sorted_ranked_files[hash]["data"]["uncached"] = files[hash]["uncached"]
+            if files[hash].get("complete"):
+                sorted_ranked_files[hash]["data"]["complete"] = files[hash]["complete"]
             if torrents_by_hash[hash].get("Seeders"):
                 sorted_ranked_files[hash]["data"]["seeders"] = torrents_by_hash[hash].get("Seeders")
             torrent_size = torrents_by_hash[hash]["Size"]
@@ -446,7 +448,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
 
         debrid_extension = get_debrid_extension(config["debridService"])
 
-        balanced_hashes = get_balanced_hashes(sorted_ranked_files, config)
+        balanced_hashes = get_balanced_hashes(sorted_ranked_files, config, type)
 
         results = []
         if (

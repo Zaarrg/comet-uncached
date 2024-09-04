@@ -501,6 +501,46 @@ async def get_torrentio(log_name: str, type: str, full_id: str):
     return results
 
 
+def check_completion(raw_title: str, season: str) -> bool:
+    """
+    Determines if a torrent title represents a complete season.
+
+    Checks for:
+    1. Season ranges (e.g., S01-S03)
+    2. Explicit mentions of complete seasons
+    3. Season mentions without episode numbers
+    4. Absence of individual episode indicators
+    5. Batch releases
+
+    Returns True if likely a complete season, False otherwise.
+    """
+    season_int = int(season)
+
+    title_parts = re.split(r'[/\\|]|\n', raw_title.lower())
+
+    for part in title_parts:
+        if '(batch)' in part or 'complete' in part or 'full' in part:
+            return True
+
+        if re.search(rf's0?(\d+)-s0?(\d+)', part):
+            start, end = map(int, re.search(rf's0?(\d+)-s0?(\d+)', part).groups())
+            if start <= season_int <= end:
+                return True
+
+        complete_patterns = [
+            rf'(?:season\s*{season_int}|s0?{season_int})\s*(?:\[|\(|$)',
+            rf's0?{season_int}\s*(?:complete|full)',
+            rf'(?:complete|full)\s*(?:season\s*{season_int}|s0?{season_int})'
+        ]
+        if any(re.search(p, part) for p in complete_patterns):
+            return True
+
+        if re.search(rf'(?:season\s*{season_int}|s0?{season_int})', part) and not re.search(r'(?:e\d+|episode\s*\d+)', part):
+            return True
+
+    return not any(re.search(p, part) for part in title_parts for p in [r's\d+e\d+', r'- \d+', r'episode \d+', r'e\d+'])
+
+
 async def filter(torrents: list, title_list: list, year: int):
     results = []
     for torrent in torrents:
@@ -656,7 +696,7 @@ async def get_torrent_hash(session: aiohttp.ClientSession, torrent: tuple):
         return (index, None)
 
 
-def get_balanced_hashes(hashes: dict, config: dict):
+def get_balanced_hashes(hashes: dict, config: dict, type: str):
     max_results = config["maxResults"]
 
     max_size = config["maxSize"]
@@ -710,7 +750,9 @@ def get_balanced_hashes(hashes: dict, config: dict):
         hashes,
         config_resolutions_order,
         config_language_preference,
-        config.get("sortType", "Sort_by_Resolution_then_Rank")
+        config.get("sortType", "Sort_by_Resolution_then_Rank"),
+        config.get("sortPreference", ""),
+        type,
     )
 
     total_resolutions = len(hashes_by_resolution)
@@ -741,27 +783,22 @@ def get_balanced_hashes(hashes: dict, config: dict):
     return balanced_hashes
 
 
-def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config_languages_preference, sort_type):
+def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config_languages_preference, sort_type, sort_preference, type):
     """Apply the specified sorting function based on the sort_type string. Sorts Uncached always by seeders"""
-    # Create resolution index map for fast lookup
     resolution_index_map = {res: i for i, res in enumerate(config_resolutions_order or [
         "4K", "2160p", "1440p", "1080p", "720p", "576p", "480p", "360p", "Uncached", "Unknown"
     ])}
 
-    # Only create the set if there is a language preference
     languages_set = set(config_languages_preference) if config_languages_preference else None
 
     def sort_by_resolution(res):
-        """Sort by resolution based on the config order."""
         return resolution_index_map.get(res, len(config_resolutions_order))
 
     def sort_by_priority_language(hash_key):
-        """Sort by priority language based on config_languages_preference."""
         languages = hashes[hash_key]["data"].get("language", [])
         return next((i for i, lang in enumerate(config_languages_preference) if lang in languages), len(config_languages_preference))
 
     def sort_uncached_by_seeders(sorted_hashes_by_resolution):
-        """Ensure Uncached, if it exists, is always sorted by seeders."""
         if "Uncached" in sorted_hashes_by_resolution:
             sorted_hashes_by_resolution["Uncached"].sort(
                 key=lambda hash_key: -int(hashes[hash_key]["data"].get("seeders", 0))
@@ -769,16 +806,14 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
         return sorted_hashes_by_resolution
 
     def sort_by_resolution_then_rank():
-        """Sort by resolution based on the config order then by rank, then sort Uncached by seeders."""
         sorted_hashes_by_resolution = {
             k: v for k, v in sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
         }
         for res, hash_list in sorted_hashes_by_resolution.items():
-            hash_list.sort(key=lambda hash_key: -int(hashes[hash_key]["data"].get("rank", 0)))
+            hash_list.sort(key=lambda hash_key: (-int(hashes[hash_key]["data"].get("rank", 0)), -hashes[hash_key]["data"].get("size", 0)))
         return sort_uncached_by_seeders(sorted_hashes_by_resolution)
 
     def sort_by_resolution_then_seeders():
-        """Sort by resolution, then by seeders within each resolution, and always sort Uncached by seeders."""
         sorted_hashes_by_resolution = {
             k: v for k, v in sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
         }
@@ -787,7 +822,6 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
         return sort_uncached_by_seeders(sorted_hashes_by_resolution)
 
     def sort_by_resolution_then_size():
-        """Sort by resolution, then by file size within each resolution, and always sort Uncached by seeders."""
         sorted_hashes_by_resolution = {
             k: v for k, v in sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
         }
@@ -798,13 +832,32 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
     def prioritize_languages(sorted_hashes_by_resolution):
         """Prioritize torrents by languages according to config_languages_preference."""
         if not languages_set:
-            return sorted_hashes_by_resolution  # No need to prioritize if there's no preference
+            return sorted_hashes_by_resolution
 
         for res, hash_list in sorted_hashes_by_resolution.items():
             prioritized = [hash_key for hash_key in hash_list if languages_set.intersection(hashes[hash_key]["data"].get("language", []))]
             non_prioritized = [hash_key for hash_key in hash_list if hash_key not in prioritized]
             prioritized.sort(key=sort_by_priority_language)
             sorted_hashes_by_resolution[res] = prioritized + non_prioritized
+        return sorted_hashes_by_resolution
+
+    def prioritize_completion(sorted_hashes_by_resolution):
+        if type != "series":
+            return sorted_hashes_by_resolution
+
+        for res, hash_list in sorted_hashes_by_resolution.items():
+            complete = [hash_key for hash_key in hash_list if hashes[hash_key]["data"].get("complete", False)]
+            incomplete = [hash_key for hash_key in hash_list if hash_key not in complete]
+
+            # Sort complete seasons based on the original sorting criteria
+            if sort_type == "Sort_by_Resolution_then_Rank":
+                complete.sort(key=lambda hash_key: (-int(hashes[hash_key]["data"].get("rank", 0)), -hashes[hash_key]["data"].get("size", 0)))
+            elif sort_type == "Sort_by_Resolution_then_Seeders":
+                complete.sort(key=lambda hash_key: -int(hashes[hash_key]["data"].get("seeders", 0)))
+            elif sort_type == "Sort_by_Resolution_then_Size":
+                complete.sort(key=lambda hash_key: -hashes[hash_key]["data"].get("size", 0))
+
+            sorted_hashes_by_resolution[res] = complete + incomplete
         return sorted_hashes_by_resolution
 
     # Main sorting logic
@@ -817,6 +870,11 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
     else:
         logger.warning(f"Invalid sort type, results will be sorted by resolution then rank")
         sorted_hashes_by_resolution = sort_by_resolution_then_rank()
+
+    # Apply completion prioritization if needed
+    if sort_preference == "Completion" and type == "series":
+        logger.info(f"Sorting results by complete seasons")
+        sorted_hashes_by_resolution = prioritize_completion(sorted_hashes_by_resolution)
 
     # Apply language prioritization if needed
     if languages_set:
@@ -902,19 +960,23 @@ def format_title(data: dict, config: dict):
         if metadata != "":
             title += f"💿 {metadata}\n"
 
+    if "All" in config["resultFormat"] or "Uncached" in config["resultFormat"]:
+        if data.get("uncached", False):
+            title += f"⚠️ Uncached"
+
     if "All" in config["resultFormat"] or "Size" in config["resultFormat"]:
         title += f"💾 {bytes_to_size(data['size'])} "
+
+    if "All" in config["resultFormat"] or "Seeders" in config["resultFormat"] or data.get("uncached", True):
+        if data.get('seeders', None) is not None:
+            title += f"🌱 {data.get('seeders')}"
 
     if "All" in config["resultFormat"] or "Tracker" in config["resultFormat"]:
         title += f"🔎 {data['tracker'] if 'tracker' in data else '?'}"
 
-    if "All" in config["resultFormat"] or "Uncached" in config["resultFormat"]:
-        if data.get("uncached", False):
-            title += "\n" + f"⚠️ Uncached"
-
-    if "All" in config["resultFormat"] or "Seeders" in config["resultFormat"] or data.get("uncached", True):
-        if data.get('seeders', None) is not None:
-            title += f"🌱 {data.get('seeders')} Seeders"
+    if "All" in config["resultFormat"] or "Complete" in config["resultFormat"]:
+        if data.get("complete", False):
+            title += f"📦 Complete Season"
 
     if "All" in config["resultFormat"] or "Languages" in config["resultFormat"]:
         languages = data["languages"]
