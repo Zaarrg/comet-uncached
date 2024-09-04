@@ -112,8 +112,6 @@ class DebridLink:
                                 continue
 
                         torrent_name_parsed = parse(torrents_by_hashes[hash]["Title"])
-                        print(torrent_name_parsed)
-                        print(check_completion(torrent_name_parsed.raw_title, season))
                         files[hash] = {
                             "index": torrent_data["files"].index(file),
                             "title": filename,
