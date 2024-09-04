@@ -574,7 +574,7 @@
                     </sl-select>
                 </div>
                 <div class="form-item">
-                    <sl-select id="sortType" label="Result Sorting" hoist value="Sort_by_Rank"></sl-select>
+                    <sl-select id="sortType" label="Result Sorting" hoist value="Sort_by_Resolution_then_Rank"></sl-select>
                 </div>
                 <div class="form-item">
                     <sl-radio-group  id="scrapingPreference" label="Scraping Preference" hoist value="tz">
@@ -777,7 +777,7 @@
                                 optionElement.textContent = `${flag} ${option}`;
                             } else {
                                 // For other selects, just use the option text as is
-                                optionElement.textContent = option;
+                                optionElement.textContent = option.replaceAll('_', ' ');
                             }
 
 

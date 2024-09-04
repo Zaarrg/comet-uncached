@@ -695,7 +695,7 @@ def get_balanced_hashes(hashes: dict, config: dict):
         hashes,
         config_resolutions_order,
         config_language_preference,
-        config.get("sortType", "Sort_by_Rank")
+        config.get("sortType", "Sort_by_Resolution_then_Rank")
     )
 
     total_resolutions = len(hashes_by_resolution)
@@ -753,11 +753,13 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
             )
         return sorted_hashes_by_resolution
 
-    def sort_by_resolution_only():
-        """Sort by resolution based on the config order, then sort Uncached by seeders."""
+    def sort_by_resolution_then_rank():
+        """Sort by resolution based on the config order then by rank, then sort Uncached by seeders."""
         sorted_hashes_by_resolution = {
             k: v for k, v in sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
         }
+        for res, hash_list in sorted_hashes_by_resolution.items():
+            hash_list.sort(key=lambda hash_key: -int(hashes[hash_key]["data"].get("rank", 0)))
         return sort_uncached_by_seeders(sorted_hashes_by_resolution)
 
     def sort_by_resolution_then_seeders():
@@ -791,17 +793,15 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
         return sorted_hashes_by_resolution
 
     # Main sorting logic
-    if sort_type == "Sort_by_Rank":
-        sorted_hashes_by_resolution = hashes_by_resolution
-    elif sort_type == "Sort_by_Resolution":
-        sorted_hashes_by_resolution = sort_by_resolution_only()
+    if sort_type == "Sort_by_Resolution_then_Rank":
+        sorted_hashes_by_resolution = sort_by_resolution_then_rank()
     elif sort_type == "Sort_by_Resolution_then_Seeders":
         sorted_hashes_by_resolution = sort_by_resolution_then_seeders()
     elif sort_type == "Sort_by_Resolution_then_Size":
         sorted_hashes_by_resolution = sort_by_resolution_then_size()
     else:
-        logger.warning(f"Invalid sort type, results will be sorted by rank")
-        sorted_hashes_by_resolution = hashes_by_resolution
+        logger.warning(f"Invalid sort type, results will be sorted by resolution then rank")
+        sorted_hashes_by_resolution = sort_by_resolution_then_rank()
 
     # Apply language prioritization if needed
     if languages_set:

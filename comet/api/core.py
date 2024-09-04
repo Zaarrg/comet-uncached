@@ -49,7 +49,7 @@ web_config = {
         "Unknown",
     ],
     "resultFormat": ["Title", "Metadata", "Size", "Tracker", "Uncached", "Seeders", "Languages"],
-    "sortType": ["Sort_by_Rank", "Sort_by_Resolution", "Sort_by_Resolution_then_Seeders", "Sort_by_Resolution_then_Size"],
+    "sortType": ["Sort_by_Resolution_then_Rank", "Sort_by_Resolution_then_Seeders", "Sort_by_Resolution_then_Size"],
     "urlPrefix": settings.URL_PREFIX if settings.URL_PREFIX else "",
 }
 

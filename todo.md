@@ -51,6 +51,16 @@
 - Added seeders for torrentio
 - Fixed configure ui using a order able select for Result Format
 
+### Small Changes between 5 - 5.1
+- Removed enhancedLanguageMatching as was not required anymore after merge
+- Postgres support and index selection fix for uncached torrents
+- Fix uncached add function missing some trackers when comparing
+- Refactored ConfigModel
+- Bunch of other small fixes not worth mentioning
+
+### Update 5.1
+- Adjusted sorting, now sorts available ```"Sort_by_Resolution_then_Rank", "Sort_by_Resolution_then_Seeders", "Sort_by_Resolution_then_Size"```
+- Added behaviorHints to stream metadata like bingeGroup and filename. Allows skip/next button on tv shows to work and some better compatibility with players
 
 ---
 ### List of new envs
@@ -64,4 +74,3 @@
 - Add uncached support for other debrid services as uncached logic is now general enough for it to be nearly copy pasted
 - Add DEBRID_TAKE_FIRST support for the other services
 - Check jackett/prowlarr missing infohashes sometimes, probably rate limits?
-- Remove useless sorting options as there is now sorted_ranked_files = sort_torrents(ranked_files) used.

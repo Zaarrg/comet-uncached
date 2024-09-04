@@ -209,6 +209,10 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                                         else None
                                     ),
                                     "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{b64config}/playback/{hash}/{data['index']}",
+                                    "behaviorHints": {
+                                        "filename": data["raw_title"],
+                                        "bingeGroup": "comet|" + hash,
+                                    }
                                 }
                             )
 
@@ -388,7 +392,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         if allowed_tracker_ids:
             await add_uncached_files(files, torrents, cache_key, log_name, allowed_tracker_ids, database)
 
-        ranked_files = set()
+        ranked_files = dict()
         for hash in files:
             try:
                 ranked_file = rtn.rank(
@@ -396,23 +400,21 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                     hash,  # , correct_title=name, remove_trash=True
                 )
 
-                ranked_files.add(ranked_file)
+                ranked_files[hash] = ranked_file
             except:
                 pass
 
-        sorted_ranked_files = sort_torrents(ranked_files)
-
-        len_sorted_ranked_files = len(sorted_ranked_files)
+        len_ranked_files = len(ranked_files)
         logger.info(
-            f"{len_sorted_ranked_files} cached files found on {config['debridService']} for {log_name}"
+            f"{len_ranked_files} cached files found on {config['debridService']} for {log_name}"
         )
 
-        if len_sorted_ranked_files == 0:
+        if len_ranked_files == 0:
             return {"streams": []}
 
         sorted_ranked_files = {
             key: (value.model_dump() if isinstance(value, Torrent) else value)
-            for key, value in sorted_ranked_files.items()
+            for key, value in ranked_files.items()
         }
 
         logger.info(
@@ -465,6 +467,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
             for hash in hash_list:
                 if hash in sorted_ranked_files:
                     hash_data = sorted_ranked_files[hash]
+                    print(hash_data)
                     data = hash_data["data"]
                     results.append(
                         {
@@ -473,6 +476,10 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                             "torrentTitle": data["torrent_title"],
                             "torrentSize": data["torrent_size"],
                             "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{b64config}/playback/{hash}/{data['index']}",
+                            "behaviorHints": {
+                                "filename": data["raw_title"],
+                                "bingeGroup": "comet|" + hash,
+                            }
                         }
                     )
         return {"streams": results}
