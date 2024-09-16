@@ -392,7 +392,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         # Adds Uncached Files to files, based on config and cached results
         allowed_tracker_ids = config.get('indexersUncached', [])
         if allowed_tracker_ids:
-            await add_uncached_files(files, torrents, cache_key, log_name, allowed_tracker_ids, database)
+            await add_uncached_files(files, torrents, cache_key, log_name, allowed_tracker_ids, database, season, episode, kitsu)
 
         ranked_files = dict()
         for hash in files:

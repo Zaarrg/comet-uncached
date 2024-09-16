@@ -607,7 +607,10 @@ async def add_uncached_files(
         cache_key: str,
         log_name: str,
         allowed_tracker_ids: list,
-        database: Database
+        database: Database,
+        season: int,
+        episode: int,
+        kitsu: bool,
 ):
     allowed_tracker_ids_set = {tracker_id.lower() for tracker_id in allowed_tracker_ids}
     found_uncached = 0
@@ -625,6 +628,13 @@ async def add_uncached_files(
         if tracker.lower() in allowed_tracker_ids_set or tracker_id.lower() in allowed_tracker_ids_set:
             info_hash = torrent["InfoHash"]
             if info_hash not in files:
+                if episode:
+                    filename_parsed = parse(torrent["Title"])
+                    if kitsu:
+                        if episode not in filename_parsed.episodes or filename_parsed.seasons:
+                            continue
+                    elif season not in filename_parsed.seasons or (filename_parsed.episodes and episode not in filename_parsed.episodes):
+                        continue
                 found_uncached += 1
                 torrent_data = {
                     "index": 1,

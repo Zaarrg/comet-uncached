@@ -195,20 +195,28 @@ class DebridLink:
 
             index = files.index(largest_file)
             torrent_id = largest_file['id']
-            await database.execute(f"""
-            UPDATE uncached_torrents 
-            SET torrentId = :torrent_id, 
-                data = {'json_set' if settings.DATABASE_TYPE == 'sqlite' else 'jsonb_set'}(
-                    {'data' if settings.DATABASE_TYPE == 'sqlite' else "CAST(data AS jsonb)"},
-                    '{{index}}',
-                    {'json(:index)' if settings.DATABASE_TYPE == 'sqlite' else 'to_jsonb(:index)'}
+            if settings.DATABASE_TYPE == 'sqlite':
+                query = """
+                        INSERT OR IGNORE INTO uncached_torrents (hash, torrentId, data)
+                        VALUES (:hash, :torrent_id, json('{"index": ' || :index || '}'))
+                        ON CONFLICT(hash) DO UPDATE SET
+                        torrentId = :torrent_id,
+                        data = json_patch(data, json('{"index": ' || :index || '}'))
+                        """
+            else:  # PostgreSQL
+                query = """
+                        INSERT INTO uncached_torrents (hash, torrentId, data)
+                        VALUES (:hash, :torrent_id, jsonb_build_object('index', :index::jsonb))
+                        ON CONFLICT (hash) DO UPDATE SET
+                        torrentId = EXCLUDED.torrentId,
+                        data = uncached_torrents.data || jsonb_build_object('index', :index::jsonb)
+                        """
+            await database.execute(query, {"torrent_id": torrent_id, "index": str(index), "hash": hash})
+            if largest_file['downloadPercent'] != 100:
+                logger.info(
+                    f"File {hash}|{index} is uncached, please wait until its cached! Is Downloaded: {largest_file['downloaded']} | Progress: {largest_file['downloadPercent']}%"
                 )
-            WHERE hash = :hash
-            """, {"torrent_id": torrent_id, "index": index, "hash": hash})
-            logger.info(
-                f"File {hash}|{index} is uncached, please wait until its cached! Is Downloaded: {largest_file['downloaded']} | Progress: {largest_file['downloadPercent']}%"
-            )
-            return None
+                return None
 
         magnet_value = await self.get_info(torrent_id)
         files = magnet_value.get('files', [])
