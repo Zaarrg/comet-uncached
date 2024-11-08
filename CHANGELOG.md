@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.32.2](https://github.com/g0ldyy/comet/compare/v1.32.1...v1.32.2) (2024-10-04)
+
+
+### Bug Fixes
+
+* ip debrid ([057126b](https://github.com/g0ldyy/comet/commit/057126bbd00f818075969e5e73eff3e834a8ef1f))
+* missing year metadata ([4a4dfb6](https://github.com/g0ldyy/comet/commit/4a4dfb68923d4c496b8e837eb3a238d6ba21ae95))
+* realdebrid ip stuff ([6ee6b92](https://github.com/g0ldyy/comet/commit/6ee6b928a57351a82af284b3c6446bcbf01a8e10))
+* weird shit ([1176b2a](https://github.com/g0ldyy/comet/commit/1176b2a84233f705033b142b1492c2bdc7da5b77))
+
+## [1.32.1](https://github.com/g0ldyy/comet/compare/v1.32.0...v1.32.1) (2024-10-01)
+
+
+### Bug Fixes
+
+* title parsing ([732021c](https://github.com/g0ldyy/comet/commit/732021c99b8004192b15d29d5b63a39bce893568))
+
+## [1.32.0](https://github.com/g0ldyy/comet/compare/v1.31.4...v1.32.0) (2024-09-18)
+
+
+### Features
+
+* autplay ([1147845](https://github.com/g0ldyy/comet/commit/1147845640a628bda61e0355f186d425587cb989))
+
+## [1.31.4](https://github.com/g0ldyy/comet/compare/v1.31.3...v1.31.4) (2024-09-17)
+
+
+### Bug Fixes
+
+* bye samples ([efcf44d](https://github.com/g0ldyy/comet/commit/efcf44dbdff688031771e6834ca4d3244489fc3c))
+
+## [1.31.3](https://github.com/g0ldyy/comet/compare/v1.31.2...v1.31.3) (2024-09-06)
+
+
+### Bug Fixes
+
+* latin and spanish separated ([2421667](https://github.com/g0ldyy/comet/commit/24216678b8fca0ab8edd48d239fb772f06712b5f))
+
 ## [1.31.2](https://github.com/g0ldyy/comet/compare/v1.31.1...v1.31.2) (2024-09-04)
 
 

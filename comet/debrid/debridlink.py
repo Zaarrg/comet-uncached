@@ -100,6 +100,9 @@ class DebridLink:
                         if not is_video(filename):
                             continue
 
+                        if "sample" in filename:
+                            continue
+
                         filename_parsed = parse(filename)
                         if episode not in filename_parsed.episodes:
                             continue
@@ -128,6 +131,9 @@ class DebridLink:
                         filename = file["name"]
 
                         if not is_video(filename):
+                            continue
+
+                        if "sample" in filename:
                             continue
 
                         files[hash] = {

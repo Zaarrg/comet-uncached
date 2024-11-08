@@ -94,7 +94,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                         break
 
                 name = element["l"]
-                year = element["y"]
+                year = element.get("y")
                 titles_per_language = {}
                 if config.get('searchLanguage') and config['searchLanguage']:
                     language_codes = get_language_codes(config['searchLanguage'])
@@ -550,8 +550,9 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
                 )
 
         ip = get_client_ip(request)
+
         if not download_link:
-            debrid = getDebrid(session, config, ip)
+            debrid = getDebrid(session, config, ip if (not settings.PROXY_DEBRID_STREAM or settings.PROXY_DEBRID_STREAM_PASSWORD != config["debridStreamProxyPassword"]) else "")
             download_link = await debrid.generate_download_link(hash, index)
 
             if not download_link:

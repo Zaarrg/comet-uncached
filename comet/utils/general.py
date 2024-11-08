@@ -72,6 +72,7 @@ languages_emojis = {
     "sv": "🇸🇪",  # Swedish
     "no": "🇳🇴",  # Norwegian
     "ms": "🇲🇾",  # Malay
+    "la": "💃🏻",  # Latino
 }
 
 
@@ -559,7 +560,7 @@ async def filter(torrents: list, title_list: list, year: int):
 
         parsed = parse(title)
         for name in title_list:
-            if not title_match(name, translate(parsed.parsed_title)):
+            if parsed.parsed_title and not title_match(name, translate(parsed.parsed_title)):
                 continue
 
             if year and parsed.year and year != parsed.year:
