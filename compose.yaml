@@ -1,14 +1,148 @@
-volumes:
-  comet_data:
-
 services:
-  comet:
-    container_name: comet
-    image: g0ldyy/comet
+  Comet:
+    image: ghcr.io/zaarrg/comet-uncached:latest
+    container_name: stremio-comet
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    #    ports: #uncomment this if you're not using a reverse proxy
+    #      - 8000:8000
+    environment:
+      - DEBRID_PROXY_URL=http://warp:1080
+      - INDEXER_MANAGER_TYPE=jackett
+      - INDEXER_MANAGER_URL=http://jackett:9117
+      - ZILEAN_URL=http://zilean:8181
     env_file:
-      - .env
+      - stack.env
+    networks:
+      stremio-addon:
+      nginx:
+
+  # This is for the DMM scraper
+  zilean:
+    image: ipromknight/zilean:latest
+    restart: unless-stopped
+    container_name: stremio-zilean
+    #    ports:
+    #     - 8181:8181
     volumes:
-      - comet_data:/data
+      - zilean_data:/app/data
+    environment:
+      Zilean__Database__ConnectionString: Host=postgres;Port=5432;Database=zilean;Username=postgres;Password=postgres
+      # Zilean__Dmm__ImportBatched: "true"         Allows enabling batched import - this is for low-end systems.
+      # Zilean__Dmm__MaxFilteredResults: 200       Allows changing the maximum number of filtered results returned by the DMM API. 200 is the default.
+      # Zilean__Dmm__MinimumScoreMatch: 0.85       Allows changing the minimum score match for the DMM API. 0.85 is the default. Values between 0 and 1 are accepted.
+    networks:
+      stremio-addon:
+    healthcheck:
+      test: curl --connect-timeout 10 --silent --show-error --fail http://zilean:8181/healthchecks/ping
+      timeout: 60s
+      interval: 30s
+      retries: 10
+
+  # This is database for zilean
+  postgres:
+    image: postgres:16.3-alpine3.20
+    container_name: stremio-postgres
+    restart: unless-stopped
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    #    ports:
+    #      - 5432:5432
+    volumes:
+      - pg-data:/var/lib/postgresql/data/pgdata
+    networks:
+      stremio-addon:
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  #This will allow you to bypass Cloudflare checks (necessary for some indexers)
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: stremio-flaresolverr
+    environment:
+      - LOG_LEVEL=info
+      - LOG_HTML=false
+      - CAPTCHA_SOLVER=none
+      - TZ=Etc/UTC
+    networks:
+      stremio-addon:
+    #ports:
+    #  - 8191:8191
+    restart: unless-stopped
+
+  #This is your debrid proxy.
+  warp:
+    image: caomingjun/warp
+    container_name: stremio-warp
+    restart: unless-stopped
+    #ports:
+    #  - '1080:1080'
+    environment:
+      - WARP_SLEEP=2
+      - BETA_FIX_HOST_CONNECTIVITY=1
+      # - WARP_LICENSE_KEY= # optional
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv4.conf.all.src_valid_mark=1
+    volumes:
+      - warp_data:/var/lib/cloudflare-warp
+    networks:
+      stremio-addon:
+    healthcheck:
+      test: curl -fsS "https://cloudflare.com/cdn-cgi/trace" | grep -qE "warp=(plus|on)" || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # Choose either jackett or prowlarr
+  jackett:
+    image: lscr.io/linuxserver/jackett:latest
+    container_name: stremio-jackett
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - jackett_data:/config
+      - jackett_data:/downloads
+    #    ports:
+    #      - 9117:9117
+    restart: unless-stopped
+    networks:
+      stremio-addon:
+      nginx:
+
+  prowlarr:
+    container_name: stremio-prowlarr
+    image: lscr.io/linuxserver/prowlarr:latest
+
+    restart: unless-stopped
+    #    ports:
+    #      - 9696:9696
+    volumes:
+      - prowlarr_data:/config
+    networks:
+      stremio-addon:
+      nginx:
+
+networks:
+  stremio-addon:
+    external: true
+  nginx:
+    external: true
+
+volumes:
+  zilean_data:
+  elastic_data:
+  warp_data:
+  jackett_data:
+  prowlarr_data:
+  pg-data:
