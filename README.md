@@ -11,6 +11,14 @@
 - This fork aims to add primarly uncached support but also enhance and add features.
 - To check the current progress and updates check the [todo.md](https://github.com/Zaarrg/comet-uncached/blob/main/todo.md)
 - Stuff might break and not work frequently!
+
+# Fork Features
+- Currently only uncached Support for real debrid
+- Advance language search. Search in different languages.
+- Advance sorting and preferences. Sort by language, rank, seeders, size or completion
+- Customize your results shown in streamio. (Result Order)
+- Encryption of config via TOKEN env
+
 # Features
 - The only Stremio addon that can Proxy Debrid Streams to allow use of the Debrid Service on multiple IPs at the same time on the same account!
 - IP-Based Max Connection Limit and Dashboard for Debrid Stream Proxier
