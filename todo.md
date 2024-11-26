@@ -85,6 +85,13 @@
 - Added Torrentio uncached support.
   - Just add torrentio to the env INDEXER_MANAGER_INDEXERS=["Torrentio"] and then select torrentio in the settings under uncached indexers.
   
+### Update 5.5
+- Fix of IndexError while using title match check + Zilean. See [issue](https://github.com/Zaarrg/comet-uncached/issues/4)
+- Fix invalid file index detection for uncached movies
+- Fixed download link cache being broken by latest file index fix
+- Added comment explaining function of uncached index
+- Small fix for debrid link to work with torrentio. Debrid link still experimental only recommended for testing atm.
+
 ---
 ### List of new envs
 - UNCACHED_TTL - Time when uncached results that started downloading and never finished or where never watched will be deleted out of cache
@@ -103,4 +110,11 @@
 - Add uncached support for other debrid services as uncached logic is now general enough for it to be nearly copy pasted
 - Add DEBRID_TAKE_FIRST support for the other services
 - Check jackett/prowlarr missing infohashes sometimes, probably rate limits?
+- Fix [issue 2](https://github.com/Zaarrg/comet-uncached/issues/2) multiple downloads
+
+- High-Priority: Fix uncached torrents not using file index properly
+  - Issue especially for tv shows. Start download on episode 1. Then try to watch episode 2.
+  - Problem: Db saves same hash for both episodes, resulting in even if episode 2 is downloaded it still will not allow to watch until episode 1 is downloaded
+  - Possible fix like download link db use file index for identifier. 
+  - Problem this solution would cause separate downloads for both episodes even if the whole container is downloaded
 

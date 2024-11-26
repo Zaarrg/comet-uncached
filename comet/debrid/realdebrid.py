@@ -3,7 +3,7 @@ import asyncio
 
 from RTN import parse
 
-from comet.utils.general import is_video, check_uncached, check_completion
+from comet.utils.general import is_video, check_uncached, check_completion, remove_file_extension
 from comet.utils.logger import logger
 from comet.utils.models import settings, database
 
@@ -203,7 +203,7 @@ class RealDebrid:
         # Get the unrestricted download link
         unrestrict_link = await self.session.post(
             f"{self.api_url}/unrestrict/link",
-            data={"link": magnet_info["links"][index], "ip": self.ip},
+            data={"link": magnet_info["links"][int(index)], "ip": self.ip},
             proxy=self.proxy,
         )
         unrestrict_link = await unrestrict_link.json()
@@ -267,9 +267,10 @@ class RealDebrid:
         # Update the database with torrent_id and selected index
         torrent_data = is_uncached.get('torrent_data', None)
         selected_index = index
+        magnet_info["files"] = [file for file in magnet_info["files"] if file.get('selected') != 0]
         for i, file in enumerate(magnet_info["files"]):
             file_name = file["path"].split("/")[-1]
-            if file_name in torrent_data.get("title"):
+            if file_name in torrent_data.get("title") or remove_file_extension(file_name) == torrent_data.get("title"):
                 selected_index = i
                 break
         index = int(selected_index)

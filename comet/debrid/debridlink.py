@@ -4,7 +4,7 @@ import asyncio
 from RTN import parse
 from aiohttp import FormData
 
-from comet.utils.general import is_video, check_uncached, check_completion
+from comet.utils.general import is_video, check_uncached, check_completion, remove_file_extension
 from comet.utils.logger import logger
 from comet.utils.models import database, settings
 
@@ -158,7 +158,7 @@ class DebridLink:
 
     async def add_magnet(self, hash: str):
         add_torrent = await self.session.post(
-            f"{self.api_url}/seedbox/add", data={"url": hash, "async": True}
+            f"{self.api_url}/seedbox/add", data={"url": f"magnet:?xt=urn:btih:{hash}", "async": True}
         )
         add_torrent = await add_torrent.json()
         return add_torrent["value"]
@@ -181,26 +181,27 @@ class DebridLink:
 
     async def handle_uncached(self, is_uncached: dict, hash: str, index: str):
         torrent_id = is_uncached.get('torrent_id', None)
+        torrent_link = is_uncached.get('torrent_link', None)
         has_magnet = is_uncached.get('has_magnet', None)
         if not torrent_id:
-            if has_magnet:
+            if has_magnet or not torrent_link:
                 file_value = await self.add_magnet(hash)
             else:
-                torrent_link = is_uncached.get('torrent_link')
                 file_value = await self.add_file(torrent_link)
 
             files = file_value.get('files', [])
-            # Selects file by size to save index
-            largest_file = max(
-                (file for file in files if file.get('wanted', False)),
-                key=lambda x: x.get('size', 0),
-                default=None
-            )
-            if not largest_file:
-                raise Exception(f"Exception while selecting files, please visit debrid and select them manually for {hash}")
+            # Selects file index
+            torrent_data = is_uncached.get('torrent_data', None)
+            selected_index = index
+            files = [file for file in files if file.get('wanted', True)]
 
-            index = files.index(largest_file)
-            torrent_id = largest_file['id']
+            for i, file in enumerate(files):
+                file_name = file["name"]
+                if file_name in torrent_data.get("title") or remove_file_extension(file_name) == torrent_data.get("title"):
+                    selected_index = i
+                    break
+            index = int(selected_index)
+            torrent_id = files[index]['id']
             if settings.DATABASE_TYPE == 'sqlite':
                 query = """
                         INSERT OR IGNORE INTO uncached_torrents (hash, torrentId, data)
@@ -218,9 +219,9 @@ class DebridLink:
                         data = uncached_torrents.data || jsonb_build_object('index', :index::jsonb)
                         """
             await database.execute(query, {"torrent_id": torrent_id, "index": str(index), "hash": hash})
-            if largest_file['downloadPercent'] != 100:
+            if files[index]['downloadPercent'] != 100:
                 logger.info(
-                    f"File {hash}|{index} is uncached, please wait until its cached! Is Downloaded: {largest_file['downloaded']} | Progress: {largest_file['downloadPercent']}%"
+                    f"File {hash}|{index} is uncached, please wait until its cached! Is Downloaded: {files[index]['downloaded']} | Progress: {files[index]['downloadPercent']}%"
                 )
                 return None
 
@@ -230,7 +231,7 @@ class DebridLink:
         # Reset TorrentId if not found, might happen if user removes it in debridManager
         if len(files) == 0 or not file:
             logger.warning(
-                f"Exception while getting file from Real-Debrid, please retry, for {hash}|{index}: {magnet_value}"
+                f"Exception while getting file from Debrid Link, please retry, for {hash}|{index}: {magnet_value}"
             )
             await database.execute(
                 "UPDATE uncached_torrents SET torrentId = :torrent_id WHERE hash = :hash",

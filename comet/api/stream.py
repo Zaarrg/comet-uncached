@@ -344,13 +344,16 @@ async def stream(request: Request, b64config: str, type: str, id: str):
 
 
             filtered_torrents = await asyncio.gather(*tasks)
-            index_less = 0
+
+            # Collect indices of torrents that should be kept
+            indices_to_keep = set()
             for result in filtered_torrents:
                 for filtered in result:
-                    if not filtered[1]:
-                        del torrents[filtered[0] - index_less]
-                        index_less += 1
-                        continue
+                    if filtered[1]:  # Torrent passes the filter
+                        indices_to_keep.add(filtered[0])
+
+            # Rebuild the torrents list with only the kept indices
+            torrents = [torrent for i, torrent in enumerate(torrents) if i in indices_to_keep]
 
             logger.info(
                 f"{len(torrents)} torrents passed title match check for {log_name}"
@@ -557,18 +560,11 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
 
             if not download_link:
                 return RedirectResponse(f"{base_url}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/assets/uncached.mp4", status_code=302)
-            # Cleanup uncached Torrent from db if possible and set index
-            deleted_data = await database.fetch_one(
-                "SELECT * FROM uncached_torrents WHERE hash = :hash",
+            # Cleanup uncached Torrent from db if possible
+            await database.execute(
+                "DELETE FROM uncached_torrents WHERE hash = :hash",
                 {"hash": hash}
             )
-            if deleted_data:
-                deleted_data = json.loads(dict(deleted_data)["data"])
-                index = deleted_data["index"]
-                await database.execute(
-                    "DELETE FROM uncached_torrents WHERE hash = :hash",
-                    {"hash": hash}
-                )
 
             # Cache the new download link
             await database.execute(

@@ -185,62 +185,25 @@ def translate(title: str):
     return title.translate(translation_table)
 
 
+VIDEO_FILE_EXTENSIONS = [
+    ".mkv", ".mp4", ".avi", ".mov", ".flv", ".wmv", ".webm", ".mpg", ".mpeg",
+    ".m4v", ".3gp", ".3g2", ".ogv", ".ogg", ".drc", ".gif", ".gifv", ".mng",
+    ".qt", ".yuv", ".rm", ".rmvb", ".asf", ".amv", ".m4p", ".mpe", ".mpv",
+    ".m2v", ".svi", ".mxf", ".roq", ".nsv", ".f4v", ".f4p", ".f4a", ".f4b"
+]
+
+
 def is_video(title: str):
     return title.endswith(
         tuple(
-            [
-                ".mkv",
-                ".mp4",
-                ".avi",
-                ".mov",
-                ".flv",
-                ".wmv",
-                ".webm",
-                ".mpg",
-                ".mpeg",
-                ".m4v",
-                ".3gp",
-                ".3g2",
-                ".ogv",
-                ".ogg",
-                ".drc",
-                ".gif",
-                ".gifv",
-                ".mng",
-                ".avi",
-                ".mov",
-                ".qt",
-                ".wmv",
-                ".yuv",
-                ".rm",
-                ".rmvb",
-                ".asf",
-                ".amv",
-                ".m4p",
-                ".m4v",
-                ".mpg",
-                ".mp2",
-                ".mpeg",
-                ".mpe",
-                ".mpv",
-                ".mpg",
-                ".mpeg",
-                ".m2v",
-                ".m4v",
-                ".svi",
-                ".3gp",
-                ".3g2",
-                ".mxf",
-                ".roq",
-                ".nsv",
-                ".flv",
-                ".f4v",
-                ".f4p",
-                ".f4a",
-                ".f4b",
-            ]
+            VIDEO_FILE_EXTENSIONS
         )
     )
+
+
+def remove_file_extension(title):
+    regex_pattern = r'\.(' + '|'.join(ext.lstrip('.') for ext in VIDEO_FILE_EXTENSIONS) + ')$'
+    return re.sub(regex_pattern, '', title, flags=re.IGNORECASE)
 
 
 def bytes_to_size(bytes: int):
@@ -652,6 +615,12 @@ async def add_uncached_files(
                     elif (filename_parsed.episodes and episode not in filename_parsed.episodes) or (filename_parsed.seasons and season not in filename_parsed.seasons):
                         continue
                 found_uncached += 1
+                # Index key Very important, has to be a unique identifier hash|index for tv shows
+                # For movies can be left at 0 as for movies the hash itself is unique enough for every torrent container
+                # For Tv Shows uses the episode as index to make it unique.
+                # Later on in debrid handle_uncached the real index is determiend based on title and file_name to return the correct download link
+                # The index used in the url only is a placeholder to make it unique to make sure the download link cache can work
+                # Real index can only be determined later when the debrid files are known for that uncached torrent
                 torrent_data = {
                     "index": episode - 1 if episode else 0,
                     "title": torrent["Title"],
