@@ -77,6 +77,13 @@
 - Added check_completion function to check if a torrent is the whole season (complete: true)
 - Added tiebreaker for sort by resolution to be size property (seeders prop is not always present)
 - Adjusted format title as in some cases to many newlines where present and stremio would cut infos
+
+### Update 5.4
+- Added error catch for real debrid disabled endpoint
+- Improved Season Completion detection
+- Fixed index selection for uncached results.
+- Added Torrentio uncached support.
+  - Just add torrentio to the env INDEXER_MANAGER_INDEXERS=["Torrentio"] and then select torrentio in the settings under uncached indexers.
   
 ---
 ### List of new envs
@@ -96,5 +103,4 @@
 - Add uncached support for other debrid services as uncached logic is now general enough for it to be nearly copy pasted
 - Add DEBRID_TAKE_FIRST support for the other services
 - Check jackett/prowlarr missing infohashes sometimes, probably rate limits?
-- Fix index selection for uncached results, still broken for tv shows... has to select the right episode...
-- Fix uncached results as its mixed, for tv shows sometimes right episode sometimes not...
+

@@ -502,6 +502,9 @@ async def get_torrentio(log_name: str, type: str, full_id: str):
     return results
 
 
+import re
+
+
 def check_completion(raw_title: str, season: str) -> bool:
     """
     Determines if a torrent title represents a complete season.
@@ -517,17 +520,24 @@ def check_completion(raw_title: str, season: str) -> bool:
     """
     season_int = int(season)
 
-    title_parts = re.split(r'[/\\|]|\n', raw_title.lower())
+    # Normalize the title for processing
+    raw_title_lower = raw_title.lower()
+
+    # Check for explicit mentions of batch or complete/full season
+    if any(keyword in raw_title_lower for keyword in ['(batch)', 'batch', 'complete', 'full']):
+        return True
+
+    # Split the title into parts for further processing
+    title_parts = re.split(r'[/\\|]|\n', raw_title_lower)
 
     for part in title_parts:
-        if '(batch)' in part or 'complete' in part or 'full' in part:
-            return True
-
+        # Handle ranges like S01-S03
         if re.search(rf's0?(\d+)-s0?(\d+)', part):
             start, end = map(int, re.search(rf's0?(\d+)-s0?(\d+)', part).groups())
             if start <= season_int <= end:
                 return True
 
+        # Check for "complete season" patterns
         complete_patterns = [
             rf'(?:season\s*{season_int}|s0?{season_int})\s*(?:\[|\(|$)',
             rf's0?{season_int}\s*(?:complete|full)',
@@ -536,10 +546,14 @@ def check_completion(raw_title: str, season: str) -> bool:
         if any(re.search(p, part) for p in complete_patterns):
             return True
 
+        # Look for season mentions without episode indicators
         if re.search(rf'(?:season\s*{season_int}|s0?{season_int})', part) and not re.search(r'(?:e\d+|episode\s*\d+)', part):
             return True
 
-    return not any(re.search(p, part) for part in title_parts for p in [r's\d+e\d+', r'- \d+', r'episode \d+', r'e\d+'])
+    # If no match, check for individual episode indicators to rule out complete season
+    episode_indicators = [r's\d+e\d+', r'- \d+', r'episode \d+', r'e\d+']
+    return not any(re.search(p, part) for part in title_parts for p in episode_indicators)
+
 
 
 async def filter(torrents: list, title_list: list, year: int):
@@ -595,6 +609,7 @@ async def check_uncached(hash: str):
         return {
             "torrent_id": torrent_id,
             "torrent_link": torrent_link,
+            "torrent_data": torrent_data,
             "index": index,
             "has_magnet": has_magnet
         }
@@ -634,11 +649,11 @@ async def add_uncached_files(
                     if kitsu:
                         if episode not in filename_parsed.episodes or filename_parsed.seasons:
                             continue
-                    elif season not in filename_parsed.seasons or (filename_parsed.episodes and episode not in filename_parsed.episodes):
+                    elif (filename_parsed.episodes and episode not in filename_parsed.episodes) or (filename_parsed.seasons and season not in filename_parsed.seasons):
                         continue
                 found_uncached += 1
                 torrent_data = {
-                    "index": 1,
+                    "index": episode - 1 if episode else 0,
                     "title": torrent["Title"],
                     "size": torrent.get("Size") if torrent.get("Size") is not None else 0,
                     "uncached": True,

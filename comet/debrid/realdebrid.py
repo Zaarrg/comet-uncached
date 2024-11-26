@@ -86,6 +86,9 @@ class RealDebrid:
 
         availability = {}
         for response in responses:
+            if response['error']:
+                logger.warning(f"Exception while checking availability {response}")
+                return {}
             if response is not None:
                 availability.update(response)
 
@@ -197,19 +200,10 @@ class RealDebrid:
         return await get_magnet_info.json()
 
     async def get_download_link(self, index: int, magnet_info: dict):
-        index = int(index)
-        realIndex = index
-        for file in magnet_info["files"]:
-            if file["id"] == realIndex:
-                break
-
-            if file["selected"] != 1:
-                index -= 1
-
         # Get the unrestricted download link
         unrestrict_link = await self.session.post(
             f"{self.api_url}/unrestrict/link",
-            data={"link": magnet_info["links"][index - 1], "ip": self.ip},
+            data={"link": magnet_info["links"][index], "ip": self.ip},
             proxy=self.proxy,
         )
         unrestrict_link = await unrestrict_link.json()
@@ -271,13 +265,14 @@ class RealDebrid:
                 f"Exception while selecting files, please visit debrid and select them manually for {hash}|{index}"
             )
         # Update the database with torrent_id and selected index
-        largest_file_index = None
-        largest_file_size = 0
-        for index, file in enumerate(magnet_info["files"]):
-            if file["selected"] == 1 and file["bytes"] > largest_file_size:
-                largest_file_size = file["bytes"]
-                largest_file_index = index
-        index = largest_file_index if largest_file_index is not None else 0
+        torrent_data = is_uncached.get('torrent_data', None)
+        selected_index = index
+        for i, file in enumerate(magnet_info["files"]):
+            file_name = file["path"].split("/")[-1]
+            if file_name in torrent_data.get("title"):
+                selected_index = i
+                break
+        index = int(selected_index)
 
         if settings.DATABASE_TYPE == 'sqlite':
             query = """

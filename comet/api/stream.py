@@ -557,11 +557,19 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
 
             if not download_link:
                 return RedirectResponse(f"{base_url}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/assets/uncached.mp4", status_code=302)
-            # Cleanup uncached Torrent from db if possible
-            await database.execute(
-                "DELETE FROM uncached_torrents WHERE hash = :hash",
+            # Cleanup uncached Torrent from db if possible and set index
+            deleted_data = await database.fetch_one(
+                "SELECT * FROM uncached_torrents WHERE hash = :hash",
                 {"hash": hash}
             )
+            if deleted_data:
+                deleted_data = json.loads(dict(deleted_data)["data"])
+                index = deleted_data["index"]
+                await database.execute(
+                    "DELETE FROM uncached_torrents WHERE hash = :hash",
+                    {"hash": hash}
+                )
+
             # Cache the new download link
             await database.execute(
                 f"INSERT {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}INTO download_links (debrid_key, hash, file_index, link, timestamp) VALUES (:debrid_key, :hash, :file_index, :link, :timestamp){' ON CONFLICT DO NOTHING' if settings.DATABASE_TYPE == 'postgresql' else ''}",
