@@ -92,12 +92,37 @@
 - Added comment explaining function of uncached index
 - Small fix for debrid link to work with torrentio. Debrid link still experimental only recommended for testing atm.
 
+### Update 6
+- BREAKING: Make sure to wipe your sqlite or postgres comet DB
+- BREAKING: Make sure to re add your addon as the encrypted config changed and old encrypted urls wont work u will get invalid config
+  - Improved encrypted config. Its even shorter now.
+  - Removed unnecessary b64 encoding causing the encrypted string to be base64 encoded twice.
+  - Shortened playback url even more if TOKEN env is provided
+- Full Uncached Torrents database refactor
+- Full Debrid Link Support + DEBRID_TAKE_FIRST
+- All missing uncached features implemented
+- Fixed issue with multiple uncached Streams not playing.
+  - Its now possible to start Caching a batch of episodes and then play E01 as soon as ready without having to wait for the whole container/season to be cached.
+  - This depends on provider, real debrid does not support this but debrid link does.
+- Fixed multiple comet addons interfering with another for uncached results.
+- Major improvement in multi download management using container and torrent ids for uncached torrents.
+- Major uncached file selection improvement. Whole system reworked. Now nearly always right file will be selected.
+- Fixed FileResponse finally... (Video length was to short and stremio was buggin out + behaviourHints)
+- Added Cache Cleanup Background task. Prevents infinite growing of db. In a normal use case db size should normalize at most watch tv shows / movies
+  - This will allow for entries to be deleted that where only cached for one person. E.g. Niche shows/movies.
+- Added File names to urls
+  - Uncached files names might be missing the file extension as it is unknown until the file is cached
+- Multidownload of uncached is no longer possible there should be fixed
+  - Potentially fixed [issue](https://github.com/Zaarrg/comet-uncached/issues/2) multiple downloads
+
 ---
 ### List of new envs
 - UNCACHED_TTL - Time when uncached results that started downloading and never finished or where never watched will be deleted out of cache
 - DEBRID_TAKE_FIRST - Returns this amount of results straight from debrid then runs through title match check
 - URL_PREFIX - Prefix to use for all endpoints like "/comet"
 - TOKEN - Token to use for encryption/decryption of config in url
+- CACHE_WIPE - Time interval of whole Cache Cleanup trigger
+- CACHE_WIPE_TTL - Time after when all entries in the cache will be deleted
 
 ### Sorting Order
 - The sorting does have a fixed order
@@ -105,16 +130,29 @@
 - Sort_by_Resolution_then_Rank then Completion torrents to the top, then those sorted by rank/seeders or size depending on initial sort then language preference to the top in order of selection in configuration
 - All the second and tertiary sorting happens inside the resolution itself
 
+### State of Uncached Support
+- Real Debrid: Full Support (Seasons limit) + DEBRID_TAKE_FIRST
+- Debrid Link: Full Support + DEBRID_TAKE_FIRST
+
+#### About Season limit
+- For tv shows limited to only cache whole seasons / torrents.
+- This means when caching a torrent with a whole season.
+- And Episode 1 is fully downloaded, it wont be played until the whole season / video files of the torrent is downloaded.
+- In contrast to for example Debrid Link, where as soon as episode 1 is downloaded it is playable, even if the whole season / torrent isn't downloaded
+- This is a technical limit of real debrid
+
+### Cache Timer Explained
+- CACHE_TTL: Optional[int] = 86400 - Stremio Episode/Movie Cache. After 24h the results shown in streamio will be refreshed
+- UNCACHED_TTL: Optional[int] = 43200 - Triggers when CACHE_TTL. Meaning UNCACHED_TTL <= CACHE_TTL. After 12h the results for uncached stuff in stremio will be refreshed.
+- CACHE_WIPE: Optional[int] = 172800 - Interval in which the background cache clean up runs. (48h)
+- CACHE_WIPE_TTL: Optional[int] = 86400 - Runs depending on CACHE_WIPE. Everything older than 24h will be wiped from cache.
+- Set CACHE_WIPE = 0 to disable background cache clean up
+
 ### Still need to do:
-- About FileResponse: Does not work in stremio app. Issue with headers/redirect. Works when range headers added. Issue when range headers added multiple calls of generate_download_link, fix is redirect to separate endpoint.
 - Add uncached support for other debrid services as uncached logic is now general enough for it to be nearly copy pasted
 - Add DEBRID_TAKE_FIRST support for the other services
+- Maybe add cache updater for uncached stuff to change uncached status instantly in stremio
 - Check jackett/prowlarr missing infohashes sometimes, probably rate limits?
-- Fix [issue 2](https://github.com/Zaarrg/comet-uncached/issues/2) multiple downloads
-
-- High-Priority: Fix uncached torrents not using file index properly
-  - Issue especially for tv shows. Start download on episode 1. Then try to watch episode 2.
-  - Problem: Db saves same hash for both episodes, resulting in even if episode 2 is downloaded it still will not allow to watch until episode 1 is downloaded
-  - Possible fix like download link db use file index for identifier. 
-  - Problem this solution would cause separate downloads for both episodes even if the whole container is downloaded
-
+  - Issue 5 might be related
+- Add Language Tags to prowlarr and jackett search
+  - Probably add new Language Tag option

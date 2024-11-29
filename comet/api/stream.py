@@ -3,13 +3,14 @@ import hashlib
 import json
 import time
 import uuid
+from urllib.parse import quote
+
 import aiohttp
 import httpx
 
-import os
 import orjson
 
-from fastapi import APIRouter, Request, Header
+from fastapi import APIRouter, Request
 from fastapi.responses import (
     RedirectResponse,
     StreamingResponse,
@@ -17,7 +18,8 @@ from fastapi.responses import (
 )
 
 from starlette.background import BackgroundTask
-from RTN import Torrent
+from RTN import Torrent, parse
+from starlette.responses import FileResponse
 
 from comet.debrid.manager import getDebrid
 from comet.utils.general import (
@@ -31,7 +33,7 @@ from comet.utils.general import (
     translate,
     get_balanced_hashes,
     format_title, add_uncached_files, get_localized_titles, get_language_codes, get_client_ip,
-    language_to_country_code
+    language_to_country_code, check_completion, short_encrypt
 )
 from comet.utils.logger import logger
 from comet.utils.models import database, rtn, settings
@@ -149,16 +151,20 @@ async def stream(request: Request, b64config: str, type: str, id: str):
 
                 logger.info(f"Cache expired for {log_name}")
 
-                # Deletes torrents matching cachekey without torrentid and after UNCACHED_TTL the ones with a torrentid
+                # Deletes uncached entries if containerId and torrentId empty - meaning download never started
+                # Deletes uncached entries if TTL expired not matter the status
                 expiration_timestamp = int(time.time()) - settings.UNCACHED_TTL
                 await database.execute(
                     """
                     DELETE FROM uncached_torrents
-                    WHERE cacheKey = :cache_key AND 
+                    WHERE cacheKey = :cache_key AND
                           (
-                            (torrentId IS NULL OR TRIM(torrentId) = '')
-                            OR 
-                            (TRIM(torrentId) != '' AND timestamp < :expiration_timestamp)
+                            (
+                              (torrentId IS NULL OR TRIM(torrentId) = '') AND
+                              (containerId IS NULL OR TRIM(containerId) = '')
+                            )
+                            OR
+                            (timestamp < :expiration_timestamp)
                           )
                     """,
                     {"cache_key": cache_key, "expiration_timestamp": expiration_timestamp}
@@ -189,12 +195,23 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                             "url": "https://comet.fast",
                         }
                     )
+
+                # Shorten Config for playback url
+                short_config = b64config
+                if settings.TOKEN:
+                    short_config = {
+                        "debridApiKey": config["debridApiKey"],
+                        "debridStreamProxyPassword": config["debridStreamProxyPassword"],
+                        "debridService": config["debridService"]
+                    }
+                    short_config = short_encrypt(json.dumps(short_config), settings.TOKEN)
                 results = []
                 for resolution, hash_list in balanced_hashes.items():
                     for hash in hash_list:
                         if hash in sorted_ranked_files:
                             hash_data = sorted_ranked_files[hash]
                             data = hash_data["data"]
+                            url_friendly_file = quote(data["raw_title"].replace('/', '-'), safe='')
                             results.append(
                                 {
                                     "name": f"[{debrid_extension}⚡] Comet {data['resolution']}",
@@ -209,7 +226,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                                         if "torrent_size" in data
                                         else None
                                     ),
-                                    "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{b64config}/playback/{hash}/{data['index']}",
+                                    "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{short_config}/playback/{hash}/{data['index']}/{url_friendly_file}",
                                     "behaviorHints": {
                                         "filename": data["raw_title"],
                                         "bingeGroup": "comet|" + hash,
@@ -381,21 +398,22 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         if len(torrents) == 0:
             return {"streams": []}
 
-        torrents_by_hash = {torrent['InfoHash']: torrent for torrent in torrents if torrent['InfoHash'] is not None}
         files = await debrid.get_files(
-            torrents_by_hash,
+            list({hash[1] for hash in torrent_hashes if hash[1] is not None}),
             type,
             season,
             episode,
             kitsu,
+            config["debridApiKey"]
         )
+        torrents_by_hash = {torrent["InfoHash"]: torrent for torrent in torrents}
         logger.info(
             f"{len(files)} cached files found on {config.get('debridService', '?')} for {log_name}"
         )
         # Adds Uncached Files to files, based on config and cached results
         allowed_tracker_ids = config.get('indexersUncached', [])
         if allowed_tracker_ids:
-            await add_uncached_files(files, torrents, cache_key, log_name, allowed_tracker_ids, database, season, episode, kitsu)
+            await add_uncached_files(files, torrents, cache_key, log_name, allowed_tracker_ids, database, season, episode, kitsu, config)
 
         ranked_files = dict()
         for hash in files:
@@ -427,13 +445,14 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         )
 
         for hash in sorted_ranked_files:  # needed for caching
+            torrent_name_parsed = parse(torrents_by_hash[hash]["Title"])
             sorted_ranked_files[hash]["data"]["title"] = files[hash]["title"]
             sorted_ranked_files[hash]["data"]["torrent_title"] = torrents_by_hash[hash]["Title"]
             sorted_ranked_files[hash]["data"]["tracker"] = torrents_by_hash[hash]["Tracker"]
             sorted_ranked_files[hash]["data"]["size"] = files[hash]["size"]
             sorted_ranked_files[hash]["data"]["uncached"] = files[hash]["uncached"]
-            if files[hash].get("complete"):
-                sorted_ranked_files[hash]["data"]["complete"] = files[hash]["complete"]
+            if files[hash].get("complete") is None:
+                sorted_ranked_files[hash]["data"]["complete"] = torrent_name_parsed.complete or check_completion(torrent_name_parsed.raw_title, season)
             if torrents_by_hash[hash].get("Seeders"):
                 sorted_ranked_files[hash]["data"]["seeders"] = torrents_by_hash[hash].get("Seeders")
             torrent_size = torrents_by_hash[hash]["Size"]
@@ -467,20 +486,29 @@ async def stream(request: Request, b64config: str, type: str, id: str):
                     "url": "https://comet.fast",
                 }
             )
-
+        # Shorten Config for playback url
+        short_config = b64config
+        if settings.TOKEN:
+            short_config = {
+                "debridApiKey": config["debridApiKey"],
+                "debridStreamProxyPassword": config["debridStreamProxyPassword"],
+                "debridService": config["debridService"]
+            }
+            short_config = short_encrypt(json.dumps(short_config), settings.TOKEN)
         results = []
         for resolution, hash_list in balanced_hashes.items():
             for hash in hash_list:
                 if hash in sorted_ranked_files:
                     hash_data = sorted_ranked_files[hash]
                     data = hash_data["data"]
+                    url_friendly_file = quote(data["raw_title"].replace('/', '-'), safe='')
                     results.append(
                         {
                             "name": f"[{debrid_extension}⚡] Comet {data['resolution']}",
                             "title": format_title(data, config),
                             "torrentTitle": data["torrent_title"],
                             "torrentSize": data["torrent_size"],
-                            "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{b64config}/playback/{hash}/{data['index']}",
+                            "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{short_config}/playback/{hash}/{data['index']}/{url_friendly_file}",
                             "behaviorHints": {
                                 "filename": data["raw_title"],
                                 "bingeGroup": "comet|" + hash,
@@ -490,7 +518,7 @@ async def stream(request: Request, b64config: str, type: str, id: str):
         return {"streams": results}
 
 
-@streams.head("/{b64config}/playback/{hash}/{index}")
+@streams.head("/{b64config}/playback/{hash}/{index}/{file_name}")
 async def playback(b64config: str, hash: str, index: str):
     return RedirectResponse("https://stremio.fast", status_code=302)
 
@@ -516,13 +544,13 @@ async def active_connections(request: Request, password: str):
     }
 
 
-@streams.get("/{b64config}/playback/{hash}/{index}")
+@streams.get("/{b64config}/playback/{hash}/{index}/{file_name}")
 async def playback(request: Request, b64config: str, hash: str, index: str):
     config = config_check(b64config)
     base_url = str(request.base_url).rstrip('/')
     index = index.split('.', 1)[0]
     if not config:
-        return RedirectResponse(f"{base_url}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/assets/invalidconfig.mp4", status_code=302)
+        return FileResponse("comet/assets/invalidconfig.mp4")
 
     if (
         settings.PROXY_DEBRID_STREAM
@@ -556,14 +584,17 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
 
         if not download_link:
             debrid = getDebrid(session, config, ip if (not settings.PROXY_DEBRID_STREAM or settings.PROXY_DEBRID_STREAM_PASSWORD != config["debridStreamProxyPassword"]) else "")
-            download_link = await debrid.generate_download_link(hash, index)
+            download_link = await debrid.generate_download_link(hash, index, config["debridApiKey"])
 
             if not download_link:
-                return RedirectResponse(f"{base_url}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/assets/uncached.mp4", status_code=302)
+                return FileResponse("comet/assets/uncached.mp4")
             # Cleanup uncached Torrent from db if possible
             await database.execute(
-                "DELETE FROM uncached_torrents WHERE hash = :hash",
-                {"hash": hash}
+                """
+                DELETE FROM uncached_torrents 
+                WHERE hash = :hash AND file_index = :file_index AND debrid_key = :debrid_key
+                """,
+                {"hash": hash, "file_index": index, "debrid_key": config["debridApiKey"]}
             )
 
             # Cache the new download link
@@ -592,7 +623,7 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
                 >= settings.PROXY_DEBRID_STREAM_MAX_CONNECTIONS
                 for connection in active_ip_connections
             ):
-                return RedirectResponse(f"{base_url}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/assets/proxylimit.mp4", status_code=302)
+                return FileResponse("comet/assets/proxylimit.mp4")
 
             proxy = None
 
@@ -659,41 +690,6 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
                     background=BackgroundTask(streamer.close),
                 )
 
-            return RedirectResponse(f"{base_url}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/assets/uncached.mp4", status_code=302)
+            return FileResponse("comet/assets/uncached.mp4")
 
         return RedirectResponse(download_link, status_code=302)
-
-
-@streams.get("/assets/{filename}")
-async def stream_file(filename: str, range: str = Header(None)):
-    async def file_response(file_path: str, range_header: str = None):
-        file_size = os.path.getsize(file_path)
-        start = 0
-        end = file_size - 1
-
-        if range_header:
-            start, end = range_header.replace("bytes=", "").split("-")
-            start = int(start)
-            end = int(end) if end else file_size - 1
-
-        chunk_size = 1024 * 1024  # 1MB chunks
-        headers = {
-            "Content-Range": f"bytes {start}-{end}/{file_size}",
-            "Accept-Ranges": "bytes",
-            "Content-Type": "video/mp4",
-            "Content-Length": str(end - start + 1),
-        }
-
-        async def file_iterator():
-            with open(file_path, "rb") as video:
-                video.seek(start)
-                while True:
-                    chunk = video.read(chunk_size)
-                    if not chunk:
-                        break
-                    yield chunk
-
-        return StreamingResponse(file_iterator(), status_code=206 if range_header else 200, headers=headers)
-
-    file_path = f"comet/assets/{filename}"
-    return await file_response(file_path, range)

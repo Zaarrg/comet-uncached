@@ -8,16 +8,20 @@
 
 # Fork Disclaimer
 - This is a work in progress fork of the official [comet repo](https://github.com/g0ldyy/comet) and will be abandoned once finished and fully implemented there
-- This fork aims to add primarly uncached support but also enhance and add features.
+- This fork aims to add primarily uncached support but also enhance and add features.
 - To check the current progress and updates check the [todo.md](https://github.com/Zaarrg/comet-uncached/blob/main/todo.md)
 - Stuff might break and not work frequently!
 
 # Fork Features
-- Currently only uncached Support for real debrid
+- Currently only uncached Support for real debrid and Debrid Link
+  - Check [todo.md](https://github.com/Zaarrg/comet-uncached/blob/main/todo.md) for support status
 - Advance language search. Search in different languages.
 - Advance sorting and preferences. Sort by language, rank, seeders, size or completion
 - Customize your results shown in streamio. (Result Order)
 - Encryption of config via TOKEN env
+- Better Url - Shortened url and filename in url included
+  - Use TOKEN env to get short playback urls aswell
+  - Use of token env highly recommend even if encryption not needed allows for shortest possible urls improving player compatibility
 
 # Features
 - The only Stremio addon that can Proxy Debrid Streams to allow use of the Debrid Service on multiple IPs at the same time on the same account!

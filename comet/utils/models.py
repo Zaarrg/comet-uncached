@@ -4,7 +4,7 @@ import string
 
 from typing import List, Optional
 from databases import Database
-from pydantic import BaseModel, field_validator, Field
+from pydantic import BaseModel, field_validator, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from RTN import RTN, BestRanking, SettingsModel
 
@@ -22,7 +22,9 @@ class AppSettings(BaseSettings):
     DATABASE_URL: Optional[str] = "username:password@hostname:port"
     DATABASE_PATH: Optional[str] = "data/comet.db"
     CACHE_TTL: Optional[int] = 86400
-    UNCACHED_TTL: Optional[int] = 86400
+    UNCACHED_TTL: Optional[int] = 43200
+    CACHE_WIPE: Optional[int] = 172800
+    CACHE_WIPE_TTL: Optional[int] = 86400
     DEBRID_PROXY_URL: Optional[str] = None
     INDEXER_MANAGER_TYPE: Optional[str] = "jackett"
     INDEXER_MANAGER_URL: Optional[str] = "http://127.0.0.1:9117"
@@ -67,8 +69,8 @@ settings = AppSettings()
 
 
 class ConfigModel(BaseModel):
-    indexers: List[str]
-    indexersUncached: List[str]
+    indexers: List[str] = Field(default_factory=list)
+    indexersUncached: List[str] = Field(default_factory=list)
     languages: List[str] = Field(default=["All"])
     languagePreference: List[str] = Field(default_factory=list)
     searchLanguage: List[str] = Field(default_factory=list)

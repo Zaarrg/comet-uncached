@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import signal
 import sys
@@ -16,6 +17,7 @@ from starlette.requests import Request
 from comet.api.core import main
 from comet.api.stream import streams
 from comet.utils.db import setup_database, teardown_database
+from comet.utils.general import cache_wipe
 from comet.utils.logger import logger
 from comet.utils.models import settings
 
@@ -40,7 +42,12 @@ class LoguruMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await setup_database()
+    cache_wipe_task_handle = None
+    if settings.CACHE_WIPE > 0:
+        cache_wipe_task_handle = asyncio.create_task(cache_wipe_task())
     yield
+    if settings.CACHE_WIPE > 0 and cache_wipe_task_handle:
+        cache_wipe_task_handle.cancel()
     await teardown_database()
 
 
@@ -150,6 +157,19 @@ def start_log():
     )
     logger.log("COMET", f"Title Match Check: {bool(settings.TITLE_MATCH_CHECK)}")
     logger.log("COMET", f"Custom Header HTML: {bool(settings.CUSTOM_HEADER_HTML)}")
+
+
+async def cache_wipe_task():
+    logger.log("COMET", f"Cache cleanup initialized. Cleaning Interval: {settings.CACHE_WIPE}s")
+    while True:
+        try:
+            await asyncio.sleep(settings.CACHE_WIPE)
+            await cache_wipe()
+        except asyncio.CancelledError:
+            # Task was cancelled, exit gracefully
+            break
+        except Exception as e:
+            logger.exception(f"Exception during cache cleanup: {e}")
 
 
 with server.run_in_thread():

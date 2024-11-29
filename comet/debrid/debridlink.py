@@ -4,9 +4,9 @@ import asyncio
 from RTN import parse
 from aiohttp import FormData
 
-from comet.utils.general import is_video, check_uncached, check_completion, remove_file_extension
+from comet.utils.general import is_video, check_uncached, remove_file_extension, update_torrent_id_uncached_db, \
+    update_container_id_uncached_db, uncached_db_find_container_id, uncached_select_index
 from comet.utils.logger import logger
-from comet.utils.models import database, settings
 
 
 class DebridLink:
@@ -30,21 +30,35 @@ class DebridLink:
 
         return False
 
-    async def get_instant(self, chunk: list):
-        try:
-            get_instant = await self.session.get(
-                f"{self.api_url}/seedbox/cached?url={','.join(chunk)}"
-            )
-            return await get_instant.json()
-        except Exception as e:
-            logger.warning(
-                f"Exception while checking hashes instant availability on Debrid-Link: {e}"
-            )
+    async def get_instant(self, chunk: list, debrid_key: str):
+        responses = []
+        for hash in chunk:
+            try:
+                # Return early if download started. Prevents Debridlink to stop ongoing downloads
+                possible_container_id = await uncached_db_find_container_id(debrid_key, hash)
+                if possible_container_id != "":
+                    continue
+
+                add_torrent = await self.session.post(
+                    f"{self.api_url}/seedbox/add",
+                    data={"url": hash, "wait": True, "async": True},
+                )
+                add_torrent = await add_torrent.json()
+
+                torrent_id = add_torrent["value"]["id"]
+
+                await self.session.delete(f"{self.api_url}/seedbox/{torrent_id}/remove")
+
+                responses.append(add_torrent)
+            except:
+                pass
+
+        return responses
 
     async def get_first_files(self, amount: int):
         results = []
-        if amount < 20 or amount > 50:
-            logger.warning(f"Max amount exceeded for retrieving torrents explicitly from Debrid-Link")
+        if amount < 0 or amount > 50:
+            logger.warning(f"Max amount exceeded for retrieving torrents explicitly from Debrid Link")
             return results
         try:
             response = await self.session.get(
@@ -52,210 +66,216 @@ class DebridLink:
                 params={"perPage": amount}
             )
             torrents = await response.json()
-
-            for torrent in torrents["value"]:
+            for file in torrents["value"]:
                 results.append(
                     {
-                        "Title": torrent['name'],
-                        "InfoHash": torrent['hashString'],
-                        "Size": torrent["totalSize"],
+                        "Title": file['name'],
+                        "InfoHash": file['hashString'],
+                        "Size": file["totalSize"],
                         "Tracker": "Debrid-Link",
                     }
                 )
-            logger.info(f"Retrieved {len(results)} torrents explicitly from Debrid-Link")
+            logger.info(f"Retrieved {len(results)} torrents explicitly from Debrid Link")
             return results
         except Exception as e:
             logger.warning(
-                f"Exception while getting recent files on Debrid-Link: {e}"
+                f"Exception while getting recent files on Debrid Link: {e}"
             )
 
     async def get_files(
-        self, torrents_by_hashes: dict, type: str, season: str, episode: str, kitsu: bool
+            self, torrent_hashes: list, type: str, season: str, episode: str, kitsu: bool, debrid_key: str
     ):
-        torrent_hashes = list(torrents_by_hashes.keys())
-        chunk_size = 250
+        chunk_size = 10
         chunks = [
-            torrent_hashes[i : i + chunk_size]
+            torrent_hashes[i: i + chunk_size]
             for i in range(0, len(torrent_hashes), chunk_size)
         ]
 
         tasks = []
         for chunk in chunks:
-            tasks.append(self.get_instant(chunk))
+            tasks.append(self.get_instant(chunk, debrid_key))
 
         responses = await asyncio.gather(*tasks)
 
-        availability = [
-            response for response in responses if response and response.get("success")
-        ]
+        availability = []
+        for response_list in responses:
+            for response in response_list:
+                availability.append(response)
 
         files = {}
 
         if type == "series":
             for result in availability:
-                for hash, torrent_data in result["value"].items():
-                    for file in torrent_data["files"]:
-                        filename = file["name"]
+                torrent_files = result["value"]["files"]
+                for file in torrent_files:
+                    if file["downloadPercent"] != 100:
+                        continue
 
-                        if not is_video(filename):
+                    filename = file["name"]
+
+                    if not is_video(filename):
+                        continue
+
+                    if "sample" in filename.lower():
+                        continue
+
+                    filename_parsed = parse(filename)
+                    if episode not in filename_parsed.episodes:
+                        continue
+
+                    if kitsu:
+                        if filename_parsed.seasons:
+                            continue
+                    else:
+                        if season not in filename_parsed.seasons:
                             continue
 
-                        if "sample" in filename:
-                            continue
+                    files[result["value"]["hashString"]] = {
+                        "index": torrent_files.index(file),
+                        "title": filename,
+                        "size": file["size"],
+                        "uncached": False,
+                        "complete": None,
+                    }
 
-                        filename_parsed = parse(filename)
-                        if episode not in filename_parsed.episodes:
-                            continue
-
-                        if kitsu:
-                            if filename_parsed.seasons:
-                                continue
-                        else:
-                            if season not in filename_parsed.seasons:
-                                continue
-
-                        torrent_name_parsed = parse(torrents_by_hashes[hash]["Title"])
-                        files[hash] = {
-                            "index": torrent_data["files"].index(file),
-                            "title": filename,
-                            "size": file["size"],
-                            "uncached": False,
-                            "complete": torrent_name_parsed.complete or check_completion(torrent_name_parsed.raw_title, season),
-                        }
-
-                        break
+                    break
         else:
             for result in availability:
-                for hash, torrent_data in result["value"].items():
-                    for file in torrent_data["files"]:
-                        filename = file["name"]
+                value = result["value"]
+                torrent_files = value["files"]
+                for file in torrent_files:
+                    if file["downloadPercent"] != 100:
+                        continue
 
-                        if not is_video(filename):
-                            continue
+                    filename = file["name"]
 
-                        if "sample" in filename:
-                            continue
+                    if not is_video(filename):
+                        continue
 
-                        files[hash] = {
-                            "index": torrent_data["files"].index(file),
-                            "title": filename,
-                            "size": file["size"],
-                            "uncached": False,
-                        }
+                    if "sample" in filename.lower():
+                        continue
 
-                        break
+                    files[value["hashString"]] = {
+                        "index": torrent_files.index(file),
+                        "title": filename,
+                        "size": file["size"],
+                        "uncached": False,
+                    }
 
         return files
-
-    async def get_info(self, torrent_id: str):
-        get_magnet_info = await self.session.get(
-            f"{self.api_url}/seedbox/list",
-            params={"ids": torrent_id},
-            proxy=self.proxy
-        )
-        info = await get_magnet_info.json()
-        return info["value"][0]
 
     async def add_magnet(self, hash: str):
         add_torrent = await self.session.post(
             f"{self.api_url}/seedbox/add", data={"url": f"magnet:?xt=urn:btih:{hash}", "async": True}
         )
-        add_torrent = await add_torrent.json()
-        return add_torrent["value"]
+        return await add_torrent.json()
 
     async def add_file(self, torrent_link: str):
+        # Download the torrent file
         async with self.session.get(torrent_link) as resp:
             if resp.status != 200:
                 raise Exception(f"Failed to download torrent, please try another one, status code: {resp.status}")
             torrent_data = await resp.read()
 
-        form = FormData()
-        form.add_field('file', torrent_data, filename='torrent.torrent', content_type='application/x-bittorrent')
-        form.add_field('async', 'true')
-
-        add_torrent = await self.session.post(
-            f"{self.api_url}/seedbox/add", data=form
+        # Create a FormData object to handle multipart/form-data encoding
+        data = FormData()
+        data.add_field(
+            'file',
+            torrent_data,
+            filename='torrent.torrent',
+            content_type='application/x-bittorrent'
         )
-        add_torrent = await add_torrent.json()
-        return add_torrent["value"]
+        data.add_field('async', 'true')
 
-    async def handle_uncached(self, is_uncached: dict, hash: str, index: str):
+        # Send the PUT request with the multipart/form-data
+        add_torrent = await self.session.post(
+            f"{self.api_url}/seedbox/add",
+            data=data,
+            proxy=self.proxy,
+        )
+        return await add_torrent.json()
+
+    async def get_info(self, container_id: str):
+        get_magnet_info = await self.session.get(
+            f"{self.api_url}/seedbox/list",
+            params={'ids': container_id},
+            proxy=self.proxy
+        )
+        return await get_magnet_info.json()
+
+    async def handle_uncached(self, is_uncached: dict, hash: str, index: str, debrid_key: str):
+        container_id = is_uncached.get('container_id', None)
         torrent_id = is_uncached.get('torrent_id', None)
-        torrent_link = is_uncached.get('torrent_link', None)
         has_magnet = is_uncached.get('has_magnet', None)
-        if not torrent_id:
-            if has_magnet or not torrent_link:
-                file_value = await self.add_magnet(hash)
+
+        if not container_id:
+            possible_container_id = await uncached_db_find_container_id(debrid_key, hash)
+            if possible_container_id == "":
+                torrent_link = is_uncached.get('torrent_link')
+                container = await (
+                    self.add_magnet(hash) if has_magnet or not torrent_link
+                    else self.add_file(torrent_link)
+                )
+                if container.get("value", None) is None:
+                    raise Exception(f"Failed to upload torrent to Debrid-Link: {hash} | {container}")
+                container_id = container["value"]["id"]
+                if not container_id:
+                    raise Exception(f"Failed to get magnet ID from Debrid-Link: {hash}")
             else:
-                file_value = await self.add_file(torrent_link)
+                container_id = possible_container_id
+            await update_container_id_uncached_db(debrid_key, hash, container_id)
 
-            files = file_value.get('files', [])
-            # Selects file index
-            torrent_data = is_uncached.get('torrent_data', None)
-            selected_index = index
-            files = [file for file in files if file.get('wanted', True)]
+        # Get info about container
+        magnet_info = await self.get_info(container_id)
 
-            for i, file in enumerate(files):
-                file_name = file["name"]
-                if file_name in torrent_data.get("title") or remove_file_extension(file_name) == torrent_data.get("title"):
-                    selected_index = i
-                    break
-            index = int(selected_index)
-            torrent_id = files[index]['id']
-            if settings.DATABASE_TYPE == 'sqlite':
-                query = """
-                        INSERT OR IGNORE INTO uncached_torrents (hash, torrentId, data)
-                        VALUES (:hash, :torrent_id, json('{"index": ' || :index || '}'))
-                        ON CONFLICT(hash) DO UPDATE SET
-                        torrentId = :torrent_id,
-                        data = json_patch(data, json('{"index": ' || :index || '}'))
-                        """
-            else:  # PostgreSQL
-                query = """
-                        INSERT INTO uncached_torrents (hash, torrentId, data)
-                        VALUES (:hash, :torrent_id, jsonb_build_object('index', :index::jsonb))
-                        ON CONFLICT (hash) DO UPDATE SET
-                        torrentId = EXCLUDED.torrentId,
-                        data = uncached_torrents.data || jsonb_build_object('index', :index::jsonb)
-                        """
-            await database.execute(query, {"torrent_id": torrent_id, "index": str(index), "hash": hash})
-            if files[index]['downloadPercent'] != 100:
-                logger.info(
-                    f"File {hash}|{index} is uncached, please wait until its cached! Is Downloaded: {files[index]['downloaded']} | Progress: {files[index]['downloadPercent']}%"
+        # Reset ContainerId if not found, might happen if user removes it in debridManager
+        if not magnet_info["success"] or len(magnet_info["value"]) <= 0:
+            logger.warning(
+                f"Exception while getting file from Debrid Link, please retry, for {hash}|{index}: {magnet_info}"
+            )
+            await update_container_id_uncached_db(debrid_key, hash, "")
+            return None
+
+        magnet_value = magnet_info["value"][0]
+        if not torrent_id:
+            # Warn if its not downloading
+            if magnet_value["wait"]:
+                logger.warning(
+                    f"Exception while selecting video files, please visit debrid and select them manually for {hash}|{index}"
                 )
                 return None
+            # Status 2 = checking, Status 4 = downloading, Status 6 = seeding, Status 100 = downloaded
+            if int(magnet_value["status"]) != 4 and int(magnet_value["status"]) != 6 and int(magnet_value["status"]) != 100:
+                logger.warning(
+                    f"Exception while selecting video files, download not started, waiting for download to start {hash}|{index}"
+                )
+                return None
+            # Select the right file and get its index by matching titles
+            selected_index = await uncached_select_index(magnet_value["files"], is_uncached.get('title'), index, "debrid_link")
+            # Save torrentId
+            torrent_id = selected_index
+            await update_torrent_id_uncached_db(debrid_key, hash, index, selected_index)
 
-        magnet_value = await self.get_info(torrent_id)
-        files = magnet_value.get('files', [])
-        file = next((file for file in files if file['id'] == torrent_id), None)
-        # Reset TorrentId if not found, might happen if user removes it in debridManager
-        if len(files) == 0 or not file:
-            logger.warning(
-                f"Exception while getting file from Debrid Link, please retry, for {hash}|{index}: {magnet_value}"
-            )
-            await database.execute(
-                "UPDATE uncached_torrents SET torrentId = :torrent_id WHERE hash = :hash",
-                {"torrent_id": "", "hash": hash}
-            )
-            return None
-
-        if file['downloadPercent'] == 100:
-            return file['downloadUrl']
-        else:
+        # Return early if already downloading
+        if magnet_value["files"][int(torrent_id)]["downloadPercent"] != 100:
             logger.info(
-                f"File {hash}|{index} is still uncached, please wait until its cached! Is Downloaded: {file['downloaded']} | Progress: {file['downloadPercent']}%"
+                f"File {hash}|{index} is still uncached, please wait until its cached! Progress: {magnet_value["files"][int(torrent_id)]["downloadPercent"]}%"
             )
             return None
+
+        # Return Link
+        return magnet_value["files"][int(torrent_id)]["downloadUrl"]
 
     async def handle_cached(self, hash: str, index: str):
-        magnet_value = await self.add_magnet(hash)
-        return magnet_value["files"][int(index)]["downloadUrl"]
+        torrent_data = await self.add_magnet(hash)
+        return torrent_data["value"]["files"][int(index)]["downloadUrl"]
 
-    async def generate_download_link(self, hash: str, index: str):
+    async def generate_download_link(self, hash: str, index: str, debrid_key: str):
         try:
-            is_uncached = await check_uncached(hash)
+            # Check if torrent Uncached
+            is_uncached = await check_uncached(hash, index, debrid_key)
             if is_uncached:
-                return await self.handle_uncached(is_uncached, hash, index)
+                return await self.handle_uncached(is_uncached, hash, index, debrid_key)
             else:
                 return await self.handle_cached(hash, index)
         except Exception as e:

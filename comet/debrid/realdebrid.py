@@ -3,7 +3,8 @@ import asyncio
 
 from RTN import parse
 
-from comet.utils.general import is_video, check_uncached, check_completion, remove_file_extension
+from comet.utils.general import is_video, check_uncached, check_completion, remove_file_extension, \
+    update_container_id_uncached_db, update_torrent_id_uncached_db, uncached_db_find_container_id, uncached_select_index
 from comet.utils.logger import logger
 from comet.utils.models import settings, database
 
@@ -69,9 +70,8 @@ class RealDebrid:
             )
 
     async def get_files(
-        self, torrents_by_hashes: dict, type: str, season: str, episode: str, kitsu: bool
+        self, torrent_hashes: list, type: str, season: str, episode: str, kitsu: bool, debrid_key: str
     ):
-        torrent_hashes = list(torrents_by_hashes.keys())
         chunk_size = 50
         chunks = [
             torrent_hashes[i : i + chunk_size]
@@ -86,7 +86,7 @@ class RealDebrid:
 
         availability = {}
         for response in responses:
-            if response['error']:
+            if isinstance(response, dict):
                 logger.warning(f"Exception while checking availability {response}")
                 return {}
             if response is not None:
@@ -120,13 +120,13 @@ class RealDebrid:
                             if season not in filename_parsed.seasons:
                                 continue
 
-                        torrent_name_parsed = parse(torrents_by_hashes[hash]["Title"])
+                        torrent_name_parsed = parse(torrent_hashes[hash]["Title"])
                         files[hash] = {
                             "index": index,
                             "title": filename,
                             "size": file["filesize"],
                             "uncached": False,
-                            "complete": torrent_name_parsed.complete or check_completion(torrent_name_parsed.raw_title, season),
+                            "complete": None,
                         }
 
                         break
@@ -200,10 +200,19 @@ class RealDebrid:
         return await get_magnet_info.json()
 
     async def get_download_link(self, index: int, magnet_info: dict):
+        index = int(index)
+        realIndex = index
+        for file in magnet_info["files"]:
+            if file["id"] == realIndex:
+                break
+
+            if file["selected"] != 1:
+                index -= 1
+
         # Get the unrestricted download link
         unrestrict_link = await self.session.post(
             f"{self.api_url}/unrestrict/link",
-            data={"link": magnet_info["links"][int(index)], "ip": self.ip},
+            data={"link": magnet_info["links"][index - 1], "ip": self.ip},
             proxy=self.proxy,
         )
         unrestrict_link = await unrestrict_link.json()
@@ -225,29 +234,49 @@ class RealDebrid:
             proxy=self.proxy,
         )
 
-    async def handle_uncached(self, is_uncached: dict, hash: str, index: str):
+    async def handle_uncached(self, is_uncached: dict, hash: str, index: str, debrid_key: str):
+        container_id = is_uncached.get('container_id', None)
         torrent_id = is_uncached.get('torrent_id', None)
         has_magnet = is_uncached.get('has_magnet', None)
 
-        if not torrent_id:
-            torrent_link = is_uncached.get('torrent_link')
-            torrent_id = await (
-                self.add_magnet(hash) if has_magnet or not torrent_link
-                else self.add_file(torrent_link)
-            )
+        if not container_id:
+            possible_container_id = await uncached_db_find_container_id(debrid_key, hash)
+            if possible_container_id == "":
+                torrent_link = is_uncached.get('torrent_link')
+                container_id = await (
+                    self.add_magnet(hash) if has_magnet or not torrent_link
+                    else self.add_file(torrent_link)
+                )
+            else:
+                container_id = possible_container_id
+            await update_container_id_uncached_db(debrid_key, hash, container_id)
 
-        magnet_info = await self.get_info(torrent_id)
+        magnet_info = await self.get_info(container_id)
 
-        # Reset TorrentId if not found, might happen if user removes it in debridManager
+        # Reset ContainerId if not found, might happen if user removes it in debridManager
         if magnet_info.get("error") == 'unknown_ressource':
             logger.warning(
                 f"Exception while getting file from Real-Debrid, please retry, for {hash}|{index}: {magnet_info}"
             )
-            await database.execute(
-                "UPDATE uncached_torrents SET torrentId = :torrent_id WHERE hash = :hash",
-                {"torrent_id": "", "hash": hash}
-            )
+            await update_container_id_uncached_db(debrid_key, hash, "")
+            await update_torrent_id_uncached_db(debrid_key, hash, index, "")
             return None
+
+        if not torrent_id:
+            # Select files
+            await self.select_files(container_id, magnet_info)
+            magnet_info = await self.get_info(container_id)
+            # Warn if after selecting still nothing selected
+            if magnet_info.get("status") == "waiting_files_selection":
+                logger.warning(
+                    f"Exception while selecting video files, please visit debrid and select them manually for {hash}|{index}"
+                )
+                return None
+            # Select the right file and get its index by matching titles
+            selected_id = await uncached_select_index(magnet_info["files"], is_uncached.get('title'), index, "real_debrid")
+            # Save torrentId (rd torrent id is index+1 or read from "id")
+            torrent_id = selected_id
+            await update_torrent_id_uncached_db(debrid_key, hash, index, selected_id)
 
         # Return early if already downloading
         if magnet_info.get("status") == 'downloading' or magnet_info.get("status") == 'queued':
@@ -256,47 +285,13 @@ class RealDebrid:
             )
             return None
 
-        # Select Files
-        await self.select_files(torrent_id, magnet_info)
-        magnet_info = await self.get_info(torrent_id)
-        # Warn if after selecting still nothing selected
-        if magnet_info.get("status") == "waiting_files_selection":
-            logger.warning(
-                f"Exception while selecting files, please visit debrid and select them manually for {hash}|{index}"
-            )
-        # Update the database with torrent_id and selected index
-        torrent_data = is_uncached.get('torrent_data', None)
-        selected_index = index
-        magnet_info["files"] = [file for file in magnet_info["files"] if file.get('selected') != 0]
-        for i, file in enumerate(magnet_info["files"]):
-            file_name = file["path"].split("/")[-1]
-            if file_name in torrent_data.get("title") or remove_file_extension(file_name) == torrent_data.get("title"):
-                selected_index = i
-                break
-        index = int(selected_index)
-
-        if settings.DATABASE_TYPE == 'sqlite':
-            query = """
-            UPDATE uncached_torrents 
-            SET torrentId = :torrent_id, 
-                data = json_set(data, '$.index', json(:index))
-            WHERE hash = :hash
-            """
-        else:  # Assuming PostgreSQL
-            query = """
-                UPDATE uncached_torrents 
-                SET torrentId = :torrent_id, 
-                    data = data || jsonb_build_object('index', :index)
-                WHERE hash = :hash
-                """
-        await database.execute(query, {"torrent_id": torrent_id, "index": index, "hash": hash})
         # Skip unrestrict if no links available yet
         if len(magnet_info["links"]) == 0:
             logger.info(
                 f"File {hash}|{index} is uncached, please wait until its cached! Status: {magnet_info.get('status')} | Progress: {magnet_info.get('progress')}%"
             )
             return None
-        return await self.get_download_link(index, magnet_info)
+        return await self.get_download_link(torrent_id, magnet_info)
 
     async def handle_cached(self, hash: str, index: str):
         torrent_id = await self.add_magnet(hash)
@@ -305,7 +300,7 @@ class RealDebrid:
         magnet_info = await self.get_info(torrent_id)
         return await self.get_download_link(index, magnet_info)
 
-    async def generate_download_link(self, hash: str, index: str):
+    async def generate_download_link(self, hash: str, index: str, debrid_key: str):
         try:
             check_blacklisted = await self.session.get("https://real-debrid.com/vpn")
             check_blacklisted = await check_blacklisted.text()
@@ -323,9 +318,9 @@ class RealDebrid:
                         f"Real-Debrid blacklisted server's IP. Switching to proxy {self.proxy} for {hash}|{index}"
                     )
             # Check if torrent Uncached
-            is_uncached = await check_uncached(hash)
+            is_uncached = await check_uncached(hash, index, debrid_key)
             if is_uncached:
-                return await self.handle_uncached(is_uncached, hash, index)
+                return await self.handle_uncached(is_uncached, hash, index, debrid_key)
             else:
                 return await self.handle_cached(hash, index)
         except Exception as e:

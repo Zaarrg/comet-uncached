@@ -93,7 +93,7 @@ class TorBox:
                             "title": filename,
                             "size": file["size"],
                             "uncached": False,
-                            "complete": torrent_name_parsed.complete or check_completion(torrent_name_parsed.raw_title, season),
+                            "complete": None,
                         }
 
                         break

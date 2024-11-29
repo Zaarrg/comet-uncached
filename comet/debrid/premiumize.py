@@ -111,7 +111,7 @@ class Premiumize:
                         "title": filename,
                         "size": int(filesizes[index]),
                         "uncached": False,
-                        "complete": torrent_name_parsed.complete or check_completion(torrent_name_parsed.raw_title, season),
+                        "complete": None,
                     }
         else:
             for result in availability:

@@ -841,11 +841,12 @@
 
                     copyLinkButton.addEventListener("click", async () => {
                         const settings = getSettings();
-                        let settingsString = urlSafeBase64Encode(JSON.stringify(settings))
+                        let settingsString = JSON.stringify(settings)
                         if (encryption_TOKEN) {
                             settingsString = await encryptData(settingsString, encryption_TOKEN)
+                        } else {
+                            settingsString = urlSafeBase64Encode(settingsString)
                         }
-
                         const textArea = document.createElement("textarea");
                         textArea.value = `${window.location.origin}${webConfig.urlPrefix ? `${webConfig.urlPrefix}` : ''}/${settingsString}/manifest.json`;
                         document.body.appendChild(textArea);
@@ -861,9 +862,11 @@
 
                     installButton.addEventListener("click", async () => {
                         const settings = getSettings();
-                        let settingsString = urlSafeBase64Encode(JSON.stringify(settings))
+                        let settingsString = JSON.stringify(settings)
                         if (encryption_TOKEN) {
                             settingsString = await encryptData(settingsString, encryption_TOKEN)
+                        } else {
+                            settingsString = urlSafeBase64Encode(settingsString)
                         }
                         window.location.href = `stremio://${window.location.host}${webConfig.urlPrefix ? `${webConfig.urlPrefix}` : ''}/${settingsString}/manifest.json`;
                         console.log(settingsString);
@@ -888,9 +891,11 @@
                             return null;
                         }
                         if (encryption_TOKEN && isEncrypted(settingsString)) {
-                            settingsString = await decryptData(settingsString, encryption_TOKEN)
+                            settingsString = JSON.parse(await decryptData(settingsString, encryption_TOKEN))
+                        } else {
+                            settingsString = decodeBase64ToJson(settingsString)
                         }
-                        return decodeBase64ToJson(settingsString);
+                        return settingsString;
                     }
 
                     function populateFormFromSettings(settings) {
@@ -923,7 +928,7 @@
                         updateDisplayOrder(select, values);
                     }
 
-                    async function encryptData(b64Data) {
+                    async function encryptData(jsonString) {
                         try {
                             const response = await fetch(encryption_url, {
                                 method: 'POST',
@@ -931,7 +936,7 @@
                                     'Content-Type': 'application/json',
                                 },
                                 body: JSON.stringify({
-                                    data: b64Data,
+                                    data: jsonString,
                                     action: 'encrypt'
                                 })
                             });

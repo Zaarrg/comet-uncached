@@ -24,7 +24,7 @@ async def setup_database():
             "CREATE TABLE IF NOT EXISTS active_connections (id TEXT PRIMARY KEY, ip TEXT, content TEXT, timestamp INTEGER)"
         )
         await database.execute(
-            "CREATE TABLE IF NOT EXISTS uncached_torrents (hash TEXT PRIMARY KEY, torrentId TEXT,data TEXT, cacheKey TEXT, timestamp INTEGER)"
+            "CREATE TABLE IF NOT EXISTS uncached_torrents (debrid_key TEXT, hash TEXT, file_index TEXT, torrentId TEXT, containerId TEXT, title TEXT, link TEXT, magnet TEXT, cacheKey TEXT, timestamp INTEGER, PRIMARY KEY (debrid_key, hash, file_index))"
         )
     except Exception as e:
         logger.error(f"Error setting up the database: {e}")
