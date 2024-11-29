@@ -258,8 +258,9 @@ class DebridLink:
 
         # Return early if already downloading
         if magnet_value["files"][int(torrent_id)]["downloadPercent"] != 100:
+            progress = magnet_value["files"][int(torrent_id)]["downloadPercent"]
             logger.info(
-                f"File {hash}|{index} is still uncached, please wait until its cached! Progress: {magnet_value["files"][int(torrent_id)]["downloadPercent"]}%"
+                f"File {hash}|{index} is still uncached, please wait until its cached! Progress: {progress}%"
             )
             return None
 
