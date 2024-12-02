@@ -59,7 +59,7 @@ class RealDebrid:
                         "Title": file['filename'],
                         "InfoHash": file['hash'],
                         "Size": file["bytes"],
-                        "Tracker": "Real-Debrid",
+                        "Tracker": "realdebrid",
                     }
                 )
             logger.info(f"Retrieved {len(results)} torrents explicitly from Real-Debrid")
@@ -70,7 +70,7 @@ class RealDebrid:
             )
 
     async def get_files(
-        self, torrent_hashes: list, type: str, season: str, episode: str, kitsu: bool, debrid_key: str
+        self, torrent_hashes: list, type: str, season: str, episode: str, kitsu: bool
     ):
         chunk_size = 100
         chunks = [
@@ -234,13 +234,13 @@ class RealDebrid:
             proxy=self.proxy,
         )
 
-    async def handle_uncached(self, is_uncached: dict, hash: str, index: str, debrid_key: str):
+    async def handle_uncached(self, is_uncached: dict, hash: str, index: str, debrid_service: str):
         container_id = is_uncached.get('container_id', None)
         torrent_id = is_uncached.get('torrent_id', None)
         has_magnet = is_uncached.get('has_magnet', None)
 
         if not container_id:
-            possible_container_id = await uncached_db_find_container_id(debrid_key, hash)
+            possible_container_id = await uncached_db_find_container_id(debrid_service, hash)
             if possible_container_id == "":
                 torrent_link = is_uncached.get('torrent_link')
                 container_id = await (
@@ -249,7 +249,7 @@ class RealDebrid:
                 )
             else:
                 container_id = possible_container_id
-            await update_container_id_uncached_db(debrid_key, hash, container_id)
+            await update_container_id_uncached_db(debrid_service, hash, container_id)
 
         magnet_info = await self.get_info(container_id)
 
@@ -258,8 +258,8 @@ class RealDebrid:
             logger.warning(
                 f"Exception while getting file from Real-Debrid, please retry, for {hash}|{index}: {magnet_info}"
             )
-            await update_container_id_uncached_db(debrid_key, hash, "")
-            await update_torrent_id_uncached_db(debrid_key, hash, index, "")
+            await update_container_id_uncached_db(debrid_service, hash, "")
+            await update_torrent_id_uncached_db(debrid_service, hash, index, "")
             return None
 
         if not torrent_id:
@@ -273,10 +273,10 @@ class RealDebrid:
                 )
                 return None
             # Select the right file and get its index by matching titles
-            selected_id = await uncached_select_index(magnet_info["files"], is_uncached.get('title'), index, "real_debrid")
+            selected_id = await uncached_select_index(magnet_info["files"], index, is_uncached["name"], is_uncached["episode"], is_uncached["parsed_data"], debrid_service)
             # Save torrentId (rd torrent id is index+1 or read from "id")
             torrent_id = selected_id
-            await update_torrent_id_uncached_db(debrid_key, hash, index, selected_id)
+            await update_torrent_id_uncached_db(debrid_service, hash, index, selected_id)
 
         # Return early if already downloading
         if magnet_info.get("status") == 'downloading' or magnet_info.get("status") == 'queued':
@@ -300,7 +300,7 @@ class RealDebrid:
         magnet_info = await self.get_info(torrent_id)
         return await self.get_download_link(index, magnet_info)
 
-    async def generate_download_link(self, hash: str, index: str, debrid_key: str):
+    async def generate_download_link(self, hash: str, index: str):
         try:
             check_blacklisted = await self.session.get("https://real-debrid.com/vpn")
             check_blacklisted = await check_blacklisted.text()
@@ -318,9 +318,9 @@ class RealDebrid:
                         f"Real-Debrid blacklisted server's IP. Switching to proxy {self.proxy} for {hash}|{index}"
                     )
             # Check if torrent Uncached
-            is_uncached = await check_uncached(hash, index, debrid_key)
+            is_uncached = await check_uncached(hash, index, "realdebrid")
             if is_uncached:
-                return await self.handle_uncached(is_uncached, hash, index, debrid_key)
+                return await self.handle_uncached(is_uncached, hash, index, "realdebrid")
             else:
                 return await self.handle_cached(hash, index)
         except Exception as e:

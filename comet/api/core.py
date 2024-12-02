@@ -38,7 +38,7 @@ web_config = {
     "searchLanguage": [
         language for language in PTT.parse.LANGUAGES_TRANSLATION_TABLE.values()
     ],
-    "resolutions": [resolution.value for resolution in RTN.models.Resolution] + ["Uncached"],
+    "resolutions": [resolution.value.capitalize() for resolution in RTN.models.Resolution] + ["Uncached"],
     "resultOrder": [
         "4K",
         "2160p",

@@ -56,7 +56,7 @@ ElfHosted offer "one-click" [private Comet instances](https://elfhosted.com/app/
 ### From source
 - Clone the repository and enter the folder
     ```sh
-    git clone https://github.com/g0ldyy/comet
+    git clone https://github.com/Zaarrg/comet-uncached
     cd comet
     ```
 - Install dependencies
@@ -84,7 +84,7 @@ ElfHosted offer "one-click" [private Comet instances](https://elfhosted.com/app/
       -e INDEXER_MANAGER_INDEXERS='["EXAMPLE1_CHANGETHIS", "EXAMPLE2_CHANGETHIS"]' \
       -e INDEXER_MANAGER_TIMEOUT=30 \
       -e GET_TORRENT_TIMEOUT=5 \
-      g0ldyy/comet
+      ghcr.io/zaarrg/comet-uncached:latest
   ```
     - To update your container
 

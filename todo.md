@@ -115,9 +115,21 @@
 - Multidownload of uncached is no longer possible there should be fixed
   - Potentially fixed [issue](https://github.com/Zaarrg/comet-uncached/issues/2) multiple downloads
 
+### Update 6.1
+- Merged Changes
+- Simplified Cache
+- Changed Uncached Cache to use same cache as normal torrents
+  - Adjusted Cache to support it
+  - Removed uncached_torrents db
+- Uncached torrents status is now updated instantly
+- Added completion check to title match check (Slightly better results)
+- Added / Improved Aliases
+  - Now by default returns results in all languages
+  - Language Search now only needed specifically for the search in e.g. jackett
+- Added prioritize Cached, sorts Cached results to the top if Uncached indexers but no Uncached resolution
+
 ---
 ### List of new envs
-- UNCACHED_TTL - Time when uncached results that started downloading and never finished or where never watched will be deleted out of cache
 - DEBRID_TAKE_FIRST - Returns this amount of results straight from debrid then runs through title match check
 - URL_PREFIX - Prefix to use for all endpoints like "/comet"
 - TOKEN - Token to use for encryption/decryption of config in url
@@ -143,16 +155,19 @@
 
 ### Cache Timer Explained
 - CACHE_TTL: Optional[int] = 86400 - Stremio Episode/Movie Cache. After 24h the results shown in streamio will be refreshed
-- UNCACHED_TTL: Optional[int] = 43200 - Triggers when CACHE_TTL. Meaning UNCACHED_TTL <= CACHE_TTL. After 12h the results for uncached stuff in stremio will be refreshed.
 - CACHE_WIPE: Optional[int] = 172800 - Interval in which the background cache clean up runs. (48h)
-- CACHE_WIPE_TTL: Optional[int] = 86400 - Runs depending on CACHE_WIPE. Everything older than 24h will be wiped from cache.
+- CACHE_WIPE_TTL: Optional[int] = 86400 - TTL for the background cache clean task. Does the same as CACHE_TTL but specific to the task
 - Set CACHE_WIPE = 0 to disable background cache clean up
 
 ### Still need to do:
 - Add uncached support for other debrid services as uncached logic is now general enough for it to be nearly copy pasted
 - Add DEBRID_TAKE_FIRST support for the other services
-- Maybe add cache updater for uncached stuff to change uncached status instantly in stremio
 - Check jackett/prowlarr missing infohashes sometimes, probably rate limits?
   - Issue 5 might be related
 - Add Language Tags to prowlarr and jackett search
   - Probably add new Language Tag option
+- Improve title match check, for some animes still missing some torrents
+  - Torrents with long name in multiple languages fail (Because only if 85% same title it matches)
+
+- MERGE that shit
+

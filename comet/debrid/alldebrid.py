@@ -44,9 +44,8 @@ class AllDebrid:
             )
 
     async def get_files(
-        self, torrents_by_hashes: list, type: str, season: str, episode: str, kitsu: bool
+        self, torrent_hashes: list, type: str, season: str, episode: str, kitsu: bool
     ):
-        torrent_hashes = list(torrents_by_hashes.keys())
         chunk_size = 500
         chunks = [
             torrent_hashes[i : i + chunk_size]
