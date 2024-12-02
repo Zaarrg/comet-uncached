@@ -127,6 +127,12 @@
   - Now by default returns results in all languages
   - Language Search now only needed specifically for the search in e.g. jackett
 - Added prioritize Cached, sorts Cached results to the top if Uncached indexers but no Uncached resolution
+- Changed json to orjson
+
+### Update 6.2
+- Language sorting fixed
+  - Used full lang name instead of code
+- Refactored some sorting functions
 
 ---
 ### List of new envs
@@ -140,6 +146,7 @@
 - The sorting does have a fixed order
 - If Sort_by_Resolution_then_Rank and SortPreference Completion and a Language Preference selected then:
 - Sort_by_Resolution_then_Rank then Completion torrents to the top, then those sorted by rank/seeders or size depending on initial sort then language preference to the top in order of selection in configuration
+- If Uncached is deselected in Resolution then before the language preference it will sort cached torrents to the top
 - All the second and tertiary sorting happens inside the resolution itself
 
 ### State of Uncached Support
@@ -168,6 +175,4 @@
   - Probably add new Language Tag option
 - Improve title match check, for some animes still missing some torrents
   - Torrents with long name in multiple languages fail (Because only if 85% same title it matches)
-
-- MERGE that shit
 

@@ -1057,15 +1057,8 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
         "4K", "2160p", "1440p", "1080p", "720p", "576p", "480p", "360p", "Uncached", "Unknown"
     ])}
 
-    languages_set = set(config_languages_preference) if config_languages_preference else None
-
     def sort_by_resolution(res):
         return resolution_index_map.get(res, len(config_resolutions_order))
-
-    def sort_by_priority_language(hash_key):
-        languages = hashes[hash_key]["data"].get("language", [])
-        return next((i for i, lang in enumerate(config_languages_preference) if lang in languages),
-                    len(config_languages_preference))
 
     def sort_uncached_by_seeders(sorted_hashes_by_resolution):
         if "Uncached" in sorted_hashes_by_resolution:
@@ -1101,15 +1094,27 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
 
     def prioritize_languages(sorted_hashes_by_resolution):
         """Prioritize torrents by languages according to config_languages_preference."""
-        if not languages_set:
+        if not config_languages_preference:
             return sorted_hashes_by_resolution
-
+        # Get language codes for the configured language preferences
+        language_codes = get_language_codes(config_languages_preference)
+        # Build a priority map for the language codes
+        language_priority = {lang: i for i, lang in enumerate(language_codes)}
         for res, hash_list in sorted_hashes_by_resolution.items():
-            prioritized = [hash_key for hash_key in hash_list if
-                           languages_set.intersection(hashes[hash_key]["data"].get("language", []))]
-            non_prioritized = [hash_key for hash_key in hash_list if hash_key not in prioritized]
-            prioritized.sort(key=sort_by_priority_language)
-            sorted_hashes_by_resolution[res] = prioritized + non_prioritized
+            # Sort items based on language priority
+            sorted_hashes_by_resolution[res] = sorted(
+                hash_list,
+                key=lambda hash_key: (
+                    language_priority.get(
+                        next(
+                            (lang for lang in hashes[hash_key]["data"].get("languages", []) if lang in language_priority),
+                            None,
+                        ),
+                        float("inf"),
+                    ),
+                    hash_list.index(hash_key),  # Preserve relative order for identical languages
+                ),
+            )
         return sorted_hashes_by_resolution
 
     def prioritize_cached(sorted_hashes_by_resolution):
@@ -1164,7 +1169,7 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
         sorted_hashes_by_resolution = prioritize_cached(sorted_hashes_by_resolution)
 
     # Apply language prioritization if needed
-    if languages_set:
+    if config_languages_preference and len(config_languages_preference) > 0:
         logger.info(f"Sorting results by language Preference {config_languages_preference}")
         sorted_hashes_by_resolution = prioritize_languages(sorted_hashes_by_resolution)
 
