@@ -1,17 +1,17 @@
 import base64
 import hashlib
-import json
 import os
 import re
-import time
 import zlib
 from typing import Literal, List, Union, Callable, Any
-from urllib.parse import quote
 
 import PTT
 import aiohttp
 import bencodepy
 import asyncio
+import orjson
+import time
+import copy
 
 from RTN import parse, title_match
 from aiohttp import ClientSession
@@ -24,9 +24,10 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from fastapi import Request
 
 from comet.utils.logger import logger
-from comet.utils.models import settings, ConfigModel, database
+from comet.utils.models import database, settings, ConfigModel
 
 languages_emojis = {
+    "unknown": "❓",  # Unknown
     "multi": "🌎",  # Dubbed
     "en": "🇬🇧",  # English
     "ja": "🇯🇵",  # Japanese
@@ -188,11 +189,14 @@ def translate(title: str):
 
 
 VIDEO_FILE_EXTENSIONS = [
-    ".mkv", ".mp4", ".avi", ".mov", ".flv", ".wmv", ".webm", ".mpg", ".mpeg",
-    ".m4v", ".3gp", ".3g2", ".ogv", ".ogg", ".drc", ".gif", ".gifv", ".mng",
-    ".qt", ".yuv", ".rm", ".rmvb", ".asf", ".amv", ".m4p", ".mpe", ".mpv",
-    ".m2v", ".svi", ".mxf", ".roq", ".nsv", ".f4v", ".f4p", ".f4a", ".f4b"
+    ".3g2",".3gp",".amv",".asf",".avi",".drc",".f4a",".f4b",".f4p",".f4v",
+    ".flv",".gif",".gifv",".m2v",".m4p",".m4v",".mkv",".mov",".mp2",".mp4",
+    ".mpg",".mpeg",".mpv",".mng",".mpe",".mxf",".nsv",".ogg",".ogv",".qt",
+    ".rm",".rmvb",".roq",".svi",".webm",".wmv",".yuv"
 ]
+
+
+
 
 
 def is_video(title: str):
@@ -252,7 +256,7 @@ def short_decrypt(encoded_data: str, token: str) -> str:
 
 def is_encrypted(s: str) -> bool:
     try:
-        json.loads(base64.b64decode(s + '=' * (-len(s) % 4)).decode())
+        orjson.loads(base64.b64decode(s + '=' * (-len(s) % 4)).decode())
         return False
     except:
         return True
@@ -287,10 +291,9 @@ def config_check(config_data: str):
     try:
         config = None
         if settings.TOKEN and is_encrypted(config_data):
-            config = json.loads(short_decrypt(config_data, settings.TOKEN))
+            config = orjson.loads(short_decrypt(config_data, settings.TOKEN))
         else:
-            config = json.loads(base64.b64decode(config_data + '=' * (-len(config_data) % 4)).decode())
-
+            config = orjson.loads(base64.b64decode(config_data + '=' * (-len(config_data) % 4)).decode())
         validated_config = ConfigModel(**config)
         return validated_config.model_dump()
     except Exception as e:
@@ -298,20 +301,35 @@ def config_check(config_data: str):
         return False
 
 
-def get_debrid_extension(debridService: str):
-    debrid_extension = None
-    if debridService == "realdebrid":
-        debrid_extension = "RD"
-    elif debridService == "alldebrid":
-        debrid_extension = "AD"
-    elif debridService == "premiumize":
-        debrid_extension = "PM"
-    elif debridService == "torbox":
-        debrid_extension = "TB"
-    elif debridService == "debridlink":
-        debrid_extension = "DL"
+def size_to_bytes(size_str: str):
+    sizes = ["bytes", "kb", "mb", "gb", "tb"]
+    try:
+        value, unit = size_str.split()
+        value = float(value)
+        unit = unit.lower()
 
-    return debrid_extension
+        if unit not in sizes:
+            return None
+
+        multiplier = 1024 ** sizes.index(unit)
+        return int(value * multiplier)
+    except:
+        return None
+
+
+def get_debrid_extension(debridService: str, debridApiKey: str = None):
+    if debridApiKey == "":
+        return "TORRENT"
+
+    debrid_extensions = {
+        "realdebrid": "RD",
+        "alldebrid": "AD",
+        "premiumize": "PM",
+        "torbox": "TB",
+        "debridlink": "DL",
+    }
+
+    return debrid_extensions.get(debridService, None)
 
 
 async def get_indexer_manager(
@@ -411,7 +429,7 @@ async def get_zilean(
                 object = {
                     "Title": result["raw_title"],
                     "InfoHash": result["info_hash"],
-                    "Size": result["size"],
+                    "Size": int(result["size"]),
                     "Tracker": "DMM",
                 }
 
@@ -444,16 +462,18 @@ async def get_torrentio(log_name: str, type: str, full_id: str):
             ).json()
 
         for torrent in get_torrentio["streams"]:
-            title = torrent["title"]
-            title_full = title.split("\n👤")[0]
-            tracker = title.split("⚙️ ")[1].split("\n")[0]
-            seeders = int(title.split("👤")[1].split()[0])
+            title_full = torrent["title"]
+            title = title_full.split("\n")[0]
+            tracker = title_full.split("⚙️ ")[1].split("\n")[0]
+            size = size_to_bytes(title_full.split("💾 ")[1].split(" ⚙️")[0])
+            seeders = int(title_full.split("👤")[1].split()[0])
+
 
             results.append(
                 {
-                    "Title": title_full,
+                    "Title": title,
                     "InfoHash": torrent["infoHash"],
-                    "Size": None,
+                    "Size": size,
                     "Tracker": f"Torrentio|{tracker}",
                     "Seeders": seeders
                 }
@@ -470,8 +490,6 @@ async def get_torrentio(log_name: str, type: str, full_id: str):
 
 
 import re
-
-
 def check_completion(raw_title: str, season: str | int) -> bool:
     """
     Determines if a torrent title represents a complete season.
@@ -525,7 +543,58 @@ def check_completion(raw_title: str, season: str | int) -> bool:
     return not any(re.search(p, part) for part in title_parts for p in episode_indicators)
 
 
-async def filter(torrents: list, title_list: list, year: int):
+async def get_mediafusion(log_name: str, type: str, full_id: str):
+    results = []
+    try:
+        try:
+            get_mediafusion = requests.get(
+                f"{settings.MEDIAFUSION_URL}/stream/{type}/{full_id}.json"
+            ).json()
+        except:
+            get_mediafusion = requests.get(
+                f"{settings.MEDIAFUSION_URL}/stream/{type}/{full_id}.json",
+                proxies={
+                    "http": settings.DEBRID_PROXY_URL,
+                    "https": settings.DEBRID_PROXY_URL,
+                },
+            ).json()
+
+        for torrent in get_mediafusion["streams"]:
+            title_full = torrent["description"]
+            title = title_full.split("\n")[0].replace("📂 ", "").replace("/", "")
+            tracker = title_full.split("🔗 ")[1]
+
+            results.append(
+                {
+                    "Title": title,
+                    "InfoHash": torrent["infoHash"],
+                    "Size": torrent["behaviorHints"][
+                        "videoSize"
+                    ],  # not the pack size but still useful for prowlarr userss
+                    "Tracker": f"MediaFusion|{tracker}",
+                }
+            )
+
+        logger.info(f"{len(results)} torrents found for {log_name} with MediaFusion")
+
+    except Exception as e:
+        logger.warning(
+            f"Exception while getting torrents for {log_name} with MediaFusion, your IP is most likely blacklisted (you should try proxying Comet): {e}"
+        )
+        pass
+
+    return results
+
+
+async def filter(
+    torrents: list,
+    title_list: list,
+    season: int,
+    year: int,
+    year_end: int,
+    aliases: dict,
+    remove_adult_content: bool,
+):
     results = []
     for torrent in torrents:
         index = torrent[0]
@@ -543,26 +612,42 @@ async def filter(torrents: list, title_list: list, year: int):
 
         parsed = parse(title)
         for name in title_list:
-            if parsed.parsed_title and not title_match(name, translate(parsed.parsed_title)):
-                continue
-
-            if year and parsed.year and year != parsed.year:
+            if remove_adult_content and parsed.adult:
                 results.append((index, False))
                 continue
 
+            if name in parsed.raw_title and check_completion(parsed.raw_title, season):
+                results.append((index, True))
+                continue
+
+            if parsed.parsed_title and not title_match(
+                    name, parsed.parsed_title, aliases=aliases
+            ):
+                results.append((index, False))
+                continue
+
+            if year and parsed.year:
+                if year_end is not None:
+                    if not (year <= parsed.year <= year_end):
+                        results.append((index, False))
+                        continue
+                else:
+                    if year < (parsed.year - 1) or year > (parsed.year + 1):
+                        results.append((index, False))
+                        continue
+
             results.append((index, True))
-            break
-        else:
-            results.append((index, False))
 
     return results
 
 
 async def uncached_select_index(
         files: List[dict],
-        search_title: str,
         index: Union[int, str],
-        debrid_service: Literal["real_debrid", "debrid_link"]
+        name: str,
+        episode: str,
+        torrent_parsed_data: str,
+        debrid_service: Literal["realdebrid", "debridlink"]
 ) -> Union[int, str]:
     """
     Select the appropriate file index or ID from a list of files based on matching titles.
@@ -570,19 +655,19 @@ async def uncached_select_index(
     :param files: List of files from the magnet info.
     :param search_title: Title to search for in the file names.
     :param index: Default fallback index if no match is found.
-    :param debrid_service: The debrid service being used ("rd" or "dl").
+    :param debridservice: The debrid service being used.
     :return: The selected file ID or index depending on the service.
     """
 
     # Service-specific configurations
     service_config = {
-        "real_debrid": {
+        "realdebrid": {
             "file_name_extractor": lambda file: file.get("path", "").split("/")[-1],
             "filter": lambda files: [file for file in files if file.get('selected') != 0],
             "id_getter": lambda file, i: file.get("id"),
             "fallback": lambda idx: int(idx) + 1,
         },
-        "debrid_link": {
+        "debridlink": {
             "file_name_extractor": lambda file: file.get("name", ""),
             "filter": lambda files: files,  # No filtering for DL
             "id_getter": lambda file, i: i,
@@ -595,7 +680,7 @@ async def uncached_select_index(
         raise Exception(f"Unsupported debrid service: {debrid_service}")
     # Ensure files list has files
     if len(files) <= 0:
-        raise Exception(f"Exception while checking files, no files found, torrent might be stale, for {debrid_service} | {search_title}")
+        raise Exception(f"Exception while checking files, no files found, torrent might be stale, for {debrid_service} | {name}")
 
     # Get the config for the selected service
     config = service_config[debrid_service]
@@ -608,102 +693,105 @@ async def uncached_select_index(
     # Apply the service-specific filter
     files = file_filter(files)
 
-    # First pass: Match based on exact file names
+    # Return early if only one file in torrent
+    if len(files) == 1:
+        selected_id_or_index = fallback(0)
+        return selected_id_or_index
+
+    # Match based on parsed episode or year/res for movies
+    torrent_parsed_data = orjson.loads(torrent_parsed_data)
+
     for i, file in enumerate(files):
         file_name = file_name_extractor(file)
-        if file_name in search_title or remove_file_extension(file_name) == search_title:
+        file_name_parsed = parse(file_name)
+
+        if episode:
+            if len(file_name_parsed.episodes) > 0 and file_name_parsed.episodes[0] == episode:
+                selected_id_or_index = id_getter(file, i)
+                break
+
+        # Check in case movie. Uncached movies have always index 0 as placeholder. Shows index > 0 (index = episode)
+        if (
+                int(index) == 0 and
+                file_name_parsed.normalized_title == torrent_parsed_data["data"]["normalized_title"] and
+                file_name_parsed.year == torrent_parsed_data["data"]["year"] and
+                file_name_parsed.resolution == torrent_parsed_data["data"]["resolution"] and
+                "sample" not in file_name_parsed.raw_title.lower()
+        ):
             selected_id_or_index = id_getter(file, i)
             break
 
-    # Second pass: Match based on parsed episodes/movies
-    if selected_id_or_index is None:
-        for i, file in enumerate(files):
-            file_name = file_name_extractor(file)
-            file_name_parsed = parse(file_name)
-            title_parsed = parse(search_title)
-
-            if len(file_name_parsed.episodes) > 0 and file_name_parsed.episodes[0] in title_parsed.episodes:
-                selected_id_or_index = id_getter(file, i)
-                break
-            # Check in case movie. Uncached movies have always index 0 as placeholder. Shows index > 0 (index = episode)
-            if (
-                    int(index) == 0 and
-                    file_name_parsed.normalized_title == title_parsed.normalized_title and
-                    file_name_parsed.year == title_parsed.year and
-                    file_name_parsed.resolution == title_parsed.resolution
-            ):
-                selected_id_or_index = id_getter(file, i)
-                break
-
     # Fallback: Use service-specific fallback logic
     if selected_id_or_index is None:
+        if index > len(files)-1:
+            index = 0
         selected_id_or_index = fallback(index)
         logger.warning(
-            f"Exception while selecting files, could not identify correct video file, using fallback, for {debrid_service} | {search_title}"
+            f"Exception while selecting files, could not identify correct video file, using fallback, for {debrid_service} | {name}"
         )
     return selected_id_or_index
 
 
-async def uncached_db_find_container_id(debrid_key: str, hash: str) -> str:
+async def uncached_db_find_container_id(debrid_service: str, hash: str) -> str:
     """
     Returns first found containerId for the given hash.
     If returned string not empty caching to debrid has been started.
     If containerId not empty no need for additional download start of this hash.
     """
     query = """
-    SELECT containerId
-    FROM uncached_torrents
-    WHERE debrid_key = :debrid_key AND hash = :hash AND containerId != ''
+    SELECT container_id
+    FROM cache
+    WHERE debridService = :debrid_service AND info_hash = :hash AND container_id != ''
     """
-    result = await database.fetch_one(query, {"hash": hash, "debrid_key": debrid_key})
+    result = await database.fetch_one(query, {"hash": hash, "debrid_service": debrid_service})
     if result:
-        return result["containerId"]
+        return result["container_id"]
     else:
         return ""
 
 
-async def update_torrent_id_uncached_db(debrid_key: str, hash: str, file_index: str, torrent_id: str):
+async def update_torrent_id_uncached_db(debrid_service: str, hash: str, file_index: str, torrent_id: str):
     """
     Sets the Torrent Id for one specific file / uncached torrent
     """
     query = """
-    UPDATE uncached_torrents 
-    SET torrentId = :torrent_id
-    WHERE debrid_key = :debrid_key AND hash = :hash AND file_index = :file_index
+    UPDATE cache 
+    SET torrent_id = :torrent_id
+    WHERE debridService = :debrid_service AND info_hash = :hash AND file_index = :file_index
     """
     await database.execute(query, {
         "torrent_id": torrent_id,
-        "debrid_key": debrid_key,
+        "debrid_service": debrid_service,
         "hash": hash,
         "file_index": file_index
     })
 
 
-async def update_container_id_uncached_db(debrid_key: str, hash: str, container_id: str):
+async def update_container_id_uncached_db(debrid_service: str, hash: str, container_id: str):
     """
     Sets the Container Id for all uncached torrents with the same hash and debrid key
     """
     query = """
-    UPDATE uncached_torrents 
-    SET containerId = :container_id
-    WHERE debrid_key = :debrid_key AND hash = :hash
+    UPDATE cache 
+    SET container_id = :container_id
+    WHERE debridService = :debrid_service AND info_hash = :hash
     """
     await database.execute(query, {
         "container_id": container_id,
-        "debrid_key": debrid_key,
+        "debrid_service": debrid_service,
         "hash": hash
     })
 
 
-async def check_uncached(hash: str, file_index: str, debrid_key: str):
+async def check_uncached(hash: str, file_index: str, debrid_service: str):
     # Fetch uncached torrent data from the database
     uncached_torrent = await database.fetch_one(
         """
-        SELECT torrentId, containerId, title, link, magnet
-        FROM uncached_torrents
-        WHERE debrid_key = :debrid_key AND hash = :hash AND file_index = :file_index
+        SELECT torrent_id, container_id, link, magnet, data, name, episode
+        FROM cache
+        WHERE debridService = :debrid_service AND info_hash = :hash AND file_index = :file_index
         """,
-        {"debrid_key": debrid_key, "hash": hash, "file_index": file_index}
+        {"debrid_service": debrid_service, "hash": hash, "file_index": file_index}
     )
 
     if uncached_torrent:
@@ -711,14 +799,42 @@ async def check_uncached(hash: str, file_index: str, debrid_key: str):
         has_magnet = bool(uncached_torrent["magnet"])
 
         return {
-            "torrent_id": uncached_torrent["torrentId"],
-            "container_id": uncached_torrent["containerId"],
-            "title": uncached_torrent["title"],
+            "name": uncached_torrent["name"],
+            "episode": uncached_torrent["episode"],
+            "parsed_data": uncached_torrent["data"],
+            "torrent_id": uncached_torrent["torrent_id"],
+            "container_id": uncached_torrent["container_id"],
             "torrent_link": uncached_torrent["link"],
             "has_magnet": has_magnet
         }
     else:
         return None
+
+
+async def update_uncached_status(uncached: bool, hash: str, file_index: str, debridService: str):
+    """
+    Update the uncached flag in both the database column and JSON data field.
+    """
+    # Fetch and update JSON data
+    row = await database.fetch_one(
+        "SELECT data FROM cache WHERE info_hash = :hash AND file_index = :file_index AND debridService = :debridService",
+        {"hash": hash, "file_index": file_index, "debridService": debridService}
+    )
+    if not row:
+        logger.error(f"Error could not find uncached torrent to update.")
+        return
+    parsed_data = orjson.loads(row["data"])
+    parsed_data["data"]["uncached"] = uncached
+    updated_data = orjson.dumps(parsed_data).decode("utf-8")
+
+    # Update database
+    await database.execute(
+        """
+        UPDATE cache SET uncached = :uncached, data = :updated_data
+        WHERE info_hash = :hash AND file_index = :file_index AND debridService = :debridService
+        """,
+        {"hash": hash, "file_index": file_index, "debridService": debridService, "uncached": uncached, "updated_data": updated_data}
+    )
 
 
 async def cache_wipe():
@@ -734,40 +850,20 @@ async def cache_wipe():
         {"expiration_timestamp": expiration_timestamp}
     )
 
-    # Delete entries from uncached_torrents where both IDs are empty or expired
-    result_uncached = await database.execute(
-        """
-        DELETE FROM uncached_torrents
-        WHERE
-            (
-                (torrentId IS NULL OR TRIM(torrentId) = '') AND
-                (containerId IS NULL OR TRIM(containerId) = '')
-            )
-            OR
-            (timestamp < :expiration_timestamp)
-        """,
-        {"expiration_timestamp": expiration_timestamp}
-    )
-    total_deleted = result_cache + result_uncached
-    logger.warning(f"Cache cleanup completed. Total entries deleted: {total_deleted}")
+    logger.warning(f"Cache cleanup completed. Total entries deleted: {result_cache}")
 
 
 async def add_uncached_files(
         files: dict,
         torrents: list,
-        cache_key: str,
         log_name: str,
         allowed_tracker_ids: list,
-        database: Database,
         season: int,
         episode: int,
         kitsu: bool,
-        config: dict,
 ):
     allowed_tracker_ids_set = {tracker_id.lower() for tracker_id in allowed_tracker_ids}
     found_uncached = 0
-    uncached_torrents = []
-    current_timestamp = int(time.time())
 
     for torrent in torrents:
         tracker = torrent.get("Tracker", "")
@@ -797,7 +893,6 @@ async def add_uncached_files(
                 # The index used in the url only is a placeholder to make it unique to make sure the download link / uncached torrents cache can work
                 # Real index can only be determined later when the debrid files are known for that uncached torrent
                 file_index = episode - 1 if episode else 0
-                complete = False
                 stremio_data = {
                     "index": file_index,
                     "title": torrent["Title"],
@@ -806,31 +901,8 @@ async def add_uncached_files(
                     "complete": None,
                     "seeders": torrent.get("Seeders") if torrent.get("Seeders") is not None else 0
                 }
-                # Update files for stremio and uncached_torrents for database insertion
+                # Update files used for stremio
                 files[info_hash] = stremio_data
-
-                uncached_torrents.append({
-                    "debrid_key": config["debridApiKey"],
-                    "hash": info_hash,
-                    "file_index": file_index,
-                    "torrentId": "",
-                    "containerId": "",
-                    "title": torrent["Title"],
-                    "link": torrent.get("Link", ""),
-                    "magnet": torrent.get("MagnetUri", ""),
-                    "cacheKey": cache_key,
-                    "timestamp": current_timestamp
-                })
-
-    # Batch insert uncached torrents
-    if uncached_torrents:
-        insert_sql = f"""
-        INSERT {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}INTO uncached_torrents
-        (debrid_key, hash, file_index, torrentId, containerId, title, link, magnet, cacheKey, timestamp)
-        VALUES (:debrid_key, :hash, :file_index, :torrentId, :containerId, :title, :link, :magnet, :cacheKey, :timestamp)
-        {'' if settings.DATABASE_TYPE == 'sqlite' else 'ON CONFLICT (debrid_key, hash, file_index) DO NOTHING'}
-        """
-        await database.execute_many(insert_sql, uncached_torrents)
 
     logger.info(
         f"{found_uncached} uncached files found on {', '.join(allowed_tracker_ids)} for {log_name}"
@@ -875,11 +947,14 @@ async def get_torrent_hash(session: aiohttp.ClientSession, torrent: tuple):
 
 def get_balanced_hashes(hashes: dict, config: dict, type: str):
     max_results = config["maxResults"]
+    max_results_per_resolution = config["maxResultsPerResolution"]
 
     max_size = config["maxSize"]
-    config_resolutions = [resolution.lower() for resolution in config["resolutions"]]
-    config_resolutions_order = config.get("resolutionsOrder", [])
+    config_resolutions = [resolution for resolution in config["resolutions"]]
     include_all_resolutions = "all" in config_resolutions
+    remove_trash = config["removeTrash"]
+
+    config_resolutions_order = config.get("resolutionsOrder", [])
     config_language_preference = {
         language.replace("_", " ").capitalize() for language in config["languagePreference"]
     }
@@ -895,15 +970,19 @@ def get_balanced_hashes(hashes: dict, config: dict, type: str):
 
     hashes_by_resolution = {}
     for hash, hash_data in hashes.items():
+        if remove_trash and not hash_data["fetch"]:
+            continue
+
         hash_info = hash_data["data"]
 
         if max_size != 0 and hash_info["size"] > max_size:
             continue
 
         if (
-                not include_all_languages
-                and not any(lang in hash_info["languages"] for lang in config_languages)
-                and ("multi" not in languages if hash_info["dubbed"] else True)
+            not include_all_languages
+            and not any(lang in hash_info["languages"] for lang in config_languages)
+            and ("multi" not in languages if hash_info["dubbed"] else True)
+            and not (len(hash_info["languages"]) == 0 and "unknown" in languages)
         ):
             continue
 
@@ -932,16 +1011,27 @@ def get_balanced_hashes(hashes: dict, config: dict, type: str):
         type,
     )
 
+    if config["reverseResultOrder"]:
+        hashes_by_resolution = {
+            res: lst[::-1] for res, lst in hashes_by_resolution.items()
+        }
+
     total_resolutions = len(hashes_by_resolution)
-    if max_results == 0 or total_resolutions == 0:
+    if max_results == 0 and max_results_per_resolution == 0 or total_resolutions == 0:
         return hashes_by_resolution
 
-    hashes_per_resolution = max_results // total_resolutions
+    hashes_per_resolution = (
+        max_results // total_resolutions
+        if max_results > 0
+        else max_results_per_resolution
+    )
     extra_hashes = max_results % total_resolutions
 
     balanced_hashes = {}
     for resolution, hash_list in hashes_by_resolution.items():
         selected_count = hashes_per_resolution + (1 if extra_hashes > 0 else 0)
+        if max_results_per_resolution > 0:
+            selected_count = min(selected_count, max_results_per_resolution)
         balanced_hashes[resolution] = hash_list[:selected_count]
         if extra_hashes > 0:
             extra_hashes -= 1
@@ -1022,6 +1112,16 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
             sorted_hashes_by_resolution[res] = prioritized + non_prioritized
         return sorted_hashes_by_resolution
 
+    def prioritize_cached(sorted_hashes_by_resolution):
+        """Move uncached items to the bottom of each resolution group."""
+        for res, hash_list in sorted_hashes_by_resolution.items():
+            # Separate cached and uncached
+            cached = [hash_key for hash_key in hash_list if not hashes[hash_key]["data"].get("uncached", False)]
+            uncached = [hash_key for hash_key in hash_list if hash_key not in cached]
+            # Merge and update
+            sorted_hashes_by_resolution[res] = cached + uncached
+        return sorted_hashes_by_resolution
+
     def prioritize_completion(sorted_hashes_by_resolution):
         if type != "series":
             return sorted_hashes_by_resolution
@@ -1057,6 +1157,11 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
     if sort_preference == "Completion" and type == "series":
         logger.info(f"Sorting results by complete seasons")
         sorted_hashes_by_resolution = prioritize_completion(sorted_hashes_by_resolution)
+
+    # Apply cached prioritization if needed
+    if not hashes_by_resolution.get("Uncached", False):
+        logger.info("Sorting results to prioritize cached torrents")
+        sorted_hashes_by_resolution = prioritize_cached(sorted_hashes_by_resolution)
 
     # Apply language prioritization if needed
     if languages_set:
@@ -1104,7 +1209,7 @@ async def get_localized_titles(language_codes, country_codes, id: str, session: 
         logger.warning(
             f"Exception while getting localized titles: {e}"
         )
-        return []
+        return {}
     localized_titles = await gathered_localized_titles.json()
 
     return extract_localized_titles(localized_titles, language_codes, country_codes)
@@ -1134,44 +1239,46 @@ def extract_localized_titles(data: dict, language_codes, country_codes):
 
 
 def format_title(data: dict, config: dict):
+    result_format = config["resultFormat"]
+    has_all = "All" in result_format
+
     title = ""
-    if "All" in config["resultFormat"] or "Title" in config["resultFormat"]:
+    if has_all or "Title" in result_format:
         title += f"{data['title']}\n"
 
-    if "All" in config["resultFormat"] or "Metadata" in config["resultFormat"]:
+    if has_all or "Metadata" in result_format:
         metadata = format_metadata(data)
         if metadata != "":
             title += f"💿 {metadata}\n"
 
-    if "All" in config["resultFormat"] or "Uncached" in config["resultFormat"]:
+    if has_all or "Uncached" in result_format:
         if data.get("uncached", False):
             title += f"⚠️ Uncached"
 
-    if "All" in config["resultFormat"] or "Size" in config["resultFormat"]:
+    if has_all or "Size" in result_format:
         title += f"💾 {bytes_to_size(data['size'])} "
 
-    if "All" in config["resultFormat"] or "Seeders" in config["resultFormat"] or data.get("uncached", True):
+    if has_all or "Seeders" in result_format or data.get("uncached", True):
         if data.get('seeders', None) is not None:
             title += f"🌱 {data.get('seeders')}"
 
-    if "All" in config["resultFormat"] or "Tracker" in config["resultFormat"]:
-        title += f"🔎 {data['tracker'] if 'tracker' in data else '?'}"
+    if has_all or "Tracker" in result_format:
+        title += f"🔎 {data['tracker'].capitalize() if 'tracker' in data else '?'}"
 
-    if "All" in config["resultFormat"] or "Complete" in config["resultFormat"]:
+    if has_all or "Complete" in result_format:
         if data.get("complete", False):
             title += f"📦 Complete Season"
 
-    if "All" in config["resultFormat"] or "Languages" in config["resultFormat"]:
+    if has_all or "Languages" in result_format:
         languages = data["languages"]
         if data["dubbed"]:
             languages.insert(0, "multi")
-        formatted_languages = (
-            "/".join(get_language_emoji(language) for language in languages)
-            if languages
-            else None
-        )
-        languages_str = "\n" + formatted_languages if formatted_languages else ""
-        title += f"{languages_str}"
+        if languages:
+            formatted_languages = "/".join(
+                get_language_emoji(language) for language in languages
+            )
+            languages_str = "\n" + formatted_languages
+            title += f"{languages_str}"
 
     if title == "":
         # Without this, Streamio shows SD as the result, which is confusing
@@ -1186,3 +1293,58 @@ def get_client_ip(request: Request):
         if "cf-connecting-ip" in request.headers
         else request.client.host
     )
+
+
+async def add_torrent_to_cache(
+    config: dict, name: str, season: int, episode: int, sorted_ranked_files: dict
+):
+    # trace of which indexers were used when cache was created - not optimal
+    indexers = config["indexers"].copy()
+    if settings.SCRAPE_TORRENTIO:
+        indexers.append("torrentio")
+    if settings.SCRAPE_MEDIAFUSION:
+        indexers.append("mediafusion")
+    if settings.ZILEAN_URL:
+        indexers.append("dmm")
+    if settings.DEBRID_TAKE_FIRST > 0:
+        indexers.append(config["debridService"])
+    for indexer in indexers:
+        hash = f"searched-{indexer}-{name}-{season}-{episode}"
+
+        searched = copy.deepcopy(
+            sorted_ranked_files[list(sorted_ranked_files.keys())[0]]
+        )
+        searched["infohash"] = hash
+        searched["data"]["tracker"] = indexer
+
+        sorted_ranked_files[hash] = searched
+    values = [
+        {
+            "debridService": config["debridService"],
+            "info_hash": sorted_ranked_files[torrent]["infohash"],
+            "name": name,
+            "season": season,
+            "episode": episode,
+            "file_index": sorted_ranked_files[torrent]["data"]["index"],
+            "torrent_id": sorted_ranked_files[torrent]["data"]["torrent_id"],
+            "container_id": sorted_ranked_files[torrent]["data"]["container_id"],
+            "uncached": sorted_ranked_files[torrent]["data"]["uncached"],
+            "link": sorted_ranked_files[torrent]["data"]["link"],
+            "magnet": sorted_ranked_files[torrent]["data"]["magnet"],
+            "tracker": sorted_ranked_files[torrent]["data"]["tracker"]
+            .split("|")[0]
+            .lower(),
+            "data": orjson.dumps(sorted_ranked_files[torrent]).decode("utf-8"),
+            "timestamp": time.time(),
+        }
+        for torrent in sorted_ranked_files
+    ]
+
+    query = f"""
+        INSERT {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}
+        INTO cache (debridService, info_hash, name, season, episode, file_index, torrent_id, container_id, uncached, link, magnet, tracker, data, timestamp)
+        VALUES (:debridService, :info_hash, :name, :season, :episode, :file_index, :torrent_id, :container_id, :uncached, :link, :magnet, :tracker, :data, :timestamp)
+        {' ON CONFLICT DO NOTHING' if settings.DATABASE_TYPE == 'postgresql' else ''}
+    """
+
+    await database.execute_many(query, values)

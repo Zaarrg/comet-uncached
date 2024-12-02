@@ -1,5 +1,7 @@
 import PTT
 import RTN
+import random
+import string
 
 from fastapi import APIRouter, Request, HTTPException, Body
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -25,7 +27,8 @@ async def health():
 
 indexers = settings.INDEXER_MANAGER_INDEXERS
 languages = [language for language in PTT.parse.LANGUAGES_TRANSLATION_TABLE.values()]
-languages.insert(0, "Multi")
+languages.insert(0, "Unknown")
+languages.insert(1, "Multi")
 web_config = {
     "indexers": [indexer.replace(" ", "_").lower() for indexer in indexers],
     "languages": languages,
@@ -104,7 +107,7 @@ async def manifest(b64config: str = None):
     debrid_extension = get_debrid_extension(config["debridService"])
 
     return {
-        "id": settings.ADDON_ID,
+        "id": f"{settings.ADDON_ID}.{''.join(random.choice(string.ascii_letters) for _ in range(4))}",
         "name": f"{settings.ADDON_NAME}{(' | ' + debrid_extension) if debrid_extension is not None else ''}",
         "description": "Stremio's fastest torrent/debrid search add-on.",
         "version": "1.0.0",

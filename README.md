@@ -1,5 +1,6 @@
+<p align="center"><img src="https://i.imgur.com/mkpkD6K.png" /></p>
 <h1 align="center" id="title">☄️ Comet - <a href="https://discord.gg/rivenmedia">Discord</a></h1>
-<p align="center"><img src="https://socialify.git.ci/g0ldyy/comet/image?description=1&font=Raleway&forks=1&issues=1&language=1&logo=https%3A%2F%2Fi.imgur.com%2FGj0KQwB.png&name=1&owner=1&pattern=Solid&pulls=1&stargazers=1&theme=Dark" /></p>
+<p align="center"><img src="https://socialify.git.ci/g0ldyy/comet/image?description=1&font=Inter&forks=1&language=1&name=1&owner=1&pattern=Solid&stargazers=1&theme=Dark" /></p>
 <p align="center">
   <a href="https://ko-fi.com/E1E7ZVMAD">
     <img src="https://ko-fi.com/img/githubbutton_sm.svg">
@@ -29,11 +30,13 @@
 - Jackett and Prowlarr support (change the `INDEXER_MANAGER_TYPE` environment variable to `jackett` or `prowlarr`)
 - [Zilean](https://github.com/iPromKnight/zilean) ([DMM](https://hashlists.debridmediamanager.com/) Scraper) support for even more results
 - [Torrentio](https://torrentio.strem.fun/) Scraper
-- Caching system ft. SQLite
+- Caching system ft. SQLite / PostgreSQL
 - Smart Torrent Ranking powered by [RTN](https://github.com/dreulavelle/rank-torrent-name)
 - Proxy support to bypass debrid restrictions
-- Real-Debrid, All-Debrid, Premiumize, TorBox and Debrid-Link supported *(if you want other debrid services, please provide an account)*
+- Real-Debrid, All-Debrid, Premiumize, TorBox and Debrid-Link supported
+- Direct Torrent supported (do not specify a Debrid API Key on the configuration page (webui) to activate it - it will use the cached results of other users using debrid service)
 - [Kitsu](https://kitsu.io/) support (anime)
+- Adult Content Filter
 
 # Installation
 To customize your Comet experience to suit your needs, please first take a look at all the [environment variables](https://github.com/g0ldyy/comet/blob/main/.env-sample)!
@@ -121,10 +124,6 @@ ElfHosted offer "one-click" [private Comet instances](https://elfhosted.com/app/
 
 ## Debrid IP Blacklist
 To bypass Real-Debrid's (or AllDebrid) IP blacklist, start a cloudflare-warp container: https://github.com/cmj2002/warp-docker
-
-## Suggested indexers
-When creating your Comet instance, it's important to choose the right indexers.
-This choice should be based on speed, quantity of content and whether the indexer is served by cloudflare or has a ratelimit system (which should be avoided).
 
 ## Web UI Showcase
 <img src="https://i.imgur.com/SaD365F.png" />

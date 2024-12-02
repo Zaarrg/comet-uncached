@@ -532,6 +532,10 @@
             </div>
 
             <div class="form-item">
+                <sl-input id="maxResultsPerResolution" type="number" min=0 value=0 label="Max Results Per Resolution" placeholder="Enter max results per resolution"></sl-input>
+            </div>
+
+            <div class="form-item">
                 <sl-input id="maxSize" type="number" min=0 value=0 label="Max Size (GB)" placeholder="Enter max size in gigabytes"></sl-input>
             </div>
 
@@ -540,26 +544,26 @@
             </div>
 
             <div class="form-item">
-                <sl-select id="debridService" value="realdebrid" label="Debrid Service" placeholder="Select debrid service">
-                    <sl-option value="realdebrid">Real-Debrid</sl-option>
-                    <sl-option value="alldebrid">All-Debrid</sl-option>
-                    <sl-option value="premiumize">Premiumize</sl-option>
+                <sl-select id="debridService" value="torbox" label="Debrid Service" placeholder="Select debrid service">
                     <sl-option value="torbox">TorBox</sl-option>
                     <sl-option value="debridlink">Debrid-Link</sl-option>
+                    <sl-option value="alldebrid">All-Debrid</sl-option>
+                    <sl-option value="premiumize">Premiumize</sl-option>
+                    <sl-option value="realdebrid">Real-Debrid</sl-option>
                 </sl-select>
             </div>
 
             <div class="form-item">
                 <label for="debridService">
                     Debrid API Key -
-                    <a id="apiKeyLink" href="https://real-debrid.com/apitoken" target="_blank">Get It Here</a>
+                    <a id="apiKeyLink" href="https://torbox.app/settings" target="_blank">Get It Here</a>
                 </label>
-                <sl-input id="debridApiKey" placeholder="Enter API key"></sl-input>
+                <sl-input id="debridApiKey" placeholder="Enter API key" help-text="If no key is specified, you'll get direct torrents!"></sl-input>
             </div>
 
             <sl-details summary="Advanced Settings">
                 <div class="form-item">
-                    <sl-select id="resultFormat" multiple clearable label="Result Format" placeholder="Select what to show in result title" hoist max-options-visible=10>
+                    <sl-select id="resultFormat" multiple label="Result Format" placeholder="Select what to show in result title" hoist max-options-visible=10>
                     </sl-select>
                 </div>
                 <div class="form-item">
@@ -586,6 +590,12 @@
                         <sl-radio-button value="z">Enable Zilean</sl-radio-button>
                         <sl-radio-button value="">Disabled</sl-radio-button>
                     </sl-radio-group>
+                </div>
+                <div class="form-item">
+                    <sl-checkbox checked id="removeTrash" help-text="Remove all trash from results (Adult Content, CAM, Clean Audio, PDTV, R5, Screener, Size, Telecine and Telesync)">Remove Trash</sl-checkbox>
+                </div>
+                <div class="form-item">
+                    <sl-checkbox id="reverseResultOrder" help-text="Reverse the order of the results for each resolution (useful for those who need small file sizes)">Reverse Result Order</sl-checkbox>
                 </div>
             </sl-details>
 
@@ -623,6 +633,7 @@
 
                 <script type="module">
                     const languagesEmojis = {
+                        "Unknown": "❓",
                         "Multi": "🌎",
                         "English": "🇬🇧",
                         "Japanese": "🇯🇵",
@@ -688,6 +699,7 @@
                             customElements.whenDefined("sl-input"),
                             customElements.whenDefined("sl-option"),
                             customElements.whenDefined("sl-icon"),
+                            customElements.whenDefined("sl-checkbox")
                         ]);
 
                         populateSelect("indexers", webConfig.indexers);
@@ -806,7 +818,10 @@
                         const searchLanguage = Array.from(document.getElementById("searchLanguage").selectedOptions).map(option => option.value);
                         const resolutions = Array.from(document.getElementById("resolutions").selectedOptions).map(option => option.value);
                         const maxResults = document.getElementById("maxResults").value;
+                        const maxResultsPerResolution = document.getElementById("maxResultsPerResolution").value;
                         const maxSize = document.getElementById("maxSize").value;
+                        const reverseResultOrder = document.getElementById("reverseResultOrder").checked;
+                        const removeTrash = document.getElementById("removeTrash").checked;
                         const resultFormat = Array.from(document.getElementById("resultFormat").selectedOptions).map(option => option.value);
                         const resolutionsOrder = Array.from(document.getElementById("resolutionsOrder").selectedOptions).map(option => option.value);
                         const sortType = document.getElementById("sortType").value;
@@ -823,7 +838,10 @@
                             indexers: indexers,
                             indexersUncached: indexersUncached,
                             maxResults: parseInt(maxResults),
+                            maxResultsPerResolution: parseInt(maxResultsPerResolution),
                             maxSize: parseFloat(maxSize * 1073741824),
+                            reverseResultOrder: reverseResultOrder,
+                            removeTrash: removeTrash,
                             resultFormat: selectedResultFormat,
                             resolutions: selectedResolutions,
                             resolutionsOrder: resolutionsOrder,
@@ -899,26 +917,44 @@
                     }
 
                     function populateFormFromSettings(settings) {
-                        document.getElementById("maxResults").value = settings.maxResults;
-                        document.getElementById("maxSize").value = settings.maxSize / 1073741824; // Convert back from bytes to GB
-                        document.getElementById("debridService").value = settings.debridService;
-                        document.getElementById("debridApiKey").value = settings.debridApiKey;
-                        document.getElementById("debridStreamProxyPassword").value = settings.debridStreamProxyPassword;
-                        document.getElementById("indexers").value = settings.indexers;
-                        document.getElementById("indexersUncached").value = settings.indexersUncached;
-                        setOrderedMultiSelectValue("resolutionsOrder", settings.resolutionsOrder);
-                        document.getElementById("sortType").value = settings.sortType;
-                        document.getElementById("sortPreference").value = settings.sortPreference;
-                        document.getElementById("scrapingPreference").value = settings.scrapingPreference;
-                        document.getElementById("languagePreference").value = settings.languagePreference;
-                        document.getElementById("searchLanguage").value = settings.searchLanguage;
-                        if (settings.languages != "All")
+                        if (settings.maxResults !== null)
+                            document.getElementById("maxResults").value = settings.maxResults;
+                        if (settings.reverseResultOrder !== null)
+                            document.getElementById("reverseResultOrder").checked = settings.reverseResultOrder;
+                        if (settings.removeTrash !== null)
+                            document.getElementById("removeTrash").checked = settings.removeTrash;
+                        if (settings.maxResultsPerResolution !== null)
+                            document.getElementById("maxResultsPerResolution").value = settings.maxResultsPerResolution;
+                        if (settings.maxSize !== null)
+                            document.getElementById("maxSize").value = settings.maxSize / 1073741824;
+                        if (settings.debridService !== null)
+                            document.getElementById("debridService").value = settings.debridService;
+                        if (settings.debridApiKey !== null)
+                            document.getElementById("debridApiKey").value = settings.debridApiKey;
+                        if (settings.debridStreamProxyPassword !== null)
+                            document.getElementById("debridStreamProxyPassword").value = settings.debridStreamProxyPassword;
+                        if (settings.indexers !== null)
+                            document.getElementById("indexers").value = settings.indexers;
+                        if (settings.languages !== null && settings.languages != "All")
                             document.getElementById("languages").value = settings.languages;
-                        if (settings.resolutions != "All")
+                        if (settings.resolutions !== null && settings.resolutions != "All")
                             document.getElementById("resolutions").value = settings.resolutions;
-                        console.log(settings.resultFormat)
-                        if (settings.resultFormat != "All")
+                        if (settings.resultFormat !== null && settings.resultFormat != "All")
                             document.getElementById("resultFormat").value = settings.resultFormat;
+
+                        if (settings.indexersUncached !== null)
+                            document.getElementById("indexersUncached").value = settings.indexersUncached;
+                        if (settings.sortType !== null)
+                            document.getElementById("sortType").value = settings.sortType;
+                        if (settings.sortPreference !== null)
+                            document.getElementById("sortPreference").value = settings.sortPreference;
+                        if (settings.scrapingPreference !== null)
+                            document.getElementById("scrapingPreference").value = settings.scrapingPreference;
+                        if (settings.languagePreference !== null)
+                            document.getElementById("languagePreference").value = settings.languagePreference;
+                        if (settings.searchLanguage !== null)
+                            document.getElementById("searchLanguage").value = settings.searchLanguage;
+                        setOrderedMultiSelectValue("resolutionsOrder", settings.resolutionsOrder);
                     }
 
                     function setOrderedMultiSelectValue(selectId, values) {

@@ -22,7 +22,7 @@ class TorBox:
                 f"{self.api_url}/user/me?settings=false"
             )
             check_premium = await check_premium.text()
-            if '"success":true' in check_premium and '"plan":0' not in check_premium:
+            if '"success":true' in check_premium:
                 return True
         except Exception as e:
             logger.warning(f"Exception while checking premium status on TorBox: {e}")
@@ -41,10 +41,9 @@ class TorBox:
             )
 
     async def get_files(
-        self, torrents_by_hashes: dict, type: str, season: str, episode: str, kitsu: bool
+        self, torrent_hashes: list, type: str, season: str, episode: str, kitsu: bool
     ):
-        torrent_hashes = list(torrents_by_hashes.keys())
-        chunk_size = 100
+        chunk_size = 50
         chunks = [
             torrent_hashes[i : i + chunk_size]
             for i in range(0, len(torrent_hashes), chunk_size)
@@ -73,7 +72,7 @@ class TorBox:
                         if not is_video(filename):
                             continue
 
-                        if "sample" in filename:
+                        if "sample" in filename.lower():
                             continue
 
                         filename_parsed = parse(filename)
@@ -110,7 +109,7 @@ class TorBox:
                         if not is_video(filename):
                             continue
 
-                        if "sample" in filename:
+                        if "sample" in filename.lower():
                             continue
 
                         files[torrent["hash"]] = {

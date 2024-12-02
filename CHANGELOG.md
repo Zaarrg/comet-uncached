@@ -1,5 +1,277 @@
 # Changelog
 
+## [1.51.0](https://github.com/g0ldyy/comet/compare/v1.50.1...v1.51.0) (2024-11-28)
+
+
+### Features
+
+* remove the sketchy one ([d692201](https://github.com/g0ldyy/comet/commit/d6922010290ebe62b56bc782859e8ad07e14daeb))
+
+## [1.50.1](https://github.com/g0ldyy/comet/compare/v1.50.0...v1.50.1) (2024-11-27)
+
+
+### Bug Fixes
+
+* easydebrid tv shows ([e40163f](https://github.com/g0ldyy/comet/commit/e40163f509fdbf41b914a136d6eea5ec2bacb891))
+* shit fix before easydebrid new api ([979c85d](https://github.com/g0ldyy/comet/commit/979c85d751d7fd8978559f9843abc5780a30e83b))
+
+## [1.50.0](https://github.com/g0ldyy/comet/compare/v1.49.0...v1.50.0) (2024-11-27)
+
+
+### Features
+
+* easydebrid support ([15b22e7](https://github.com/g0ldyy/comet/commit/15b22e75aa4c4e0d32e3dbc8d76cd1c45eeedde6))
+* revert back to old jackett queries ([d721246](https://github.com/g0ldyy/comet/commit/d7212465f18554f6d9e41b2faa94026a8eb10208))
+
+## [1.49.0](https://github.com/g0ldyy/comet/compare/v1.48.1...v1.49.0) (2024-11-26)
+
+
+### Features
+
+* torbox speed improvement + torbox proxy stream fix ([30ecbce](https://github.com/g0ldyy/comet/commit/30ecbcec4560510b260c43ec2ed04a82e724c743))
+
+## [1.48.1](https://github.com/g0ldyy/comet/compare/v1.48.0...v1.48.1) (2024-11-26)
+
+
+### Bug Fixes
+
+* we don't want to spam debrid-link shit ([f9c0ec0](https://github.com/g0ldyy/comet/commit/f9c0ec0a84b6fa9a1e791990b690b6f8ffe0922d))
+
+## [1.48.0](https://github.com/g0ldyy/comet/compare/v1.47.0...v1.48.0) (2024-11-26)
+
+
+### Features
+
+* GG Debrid-Link, restrictions defeated 🤓☝️ ([49cd90b](https://github.com/g0ldyy/comet/commit/49cd90bd0092fd25fe866c3a9120e966a855cd76))
+
+## [1.47.0](https://github.com/g0ldyy/comet/compare/v1.46.0...v1.47.0) (2024-11-26)
+
+
+### Features
+
+* random addon id ([1b6a80b](https://github.com/g0ldyy/comet/commit/1b6a80bbe5800771774adeb469d861919dc3f70d))
+
+## [1.46.0](https://github.com/g0ldyy/comet/compare/v1.45.0...v1.46.0) (2024-11-24)
+
+
+### Features
+
+* remove the need to have a pro torbox acc ([253bfea](https://github.com/g0ldyy/comet/commit/253bfeae4f37595bd59263cde8e1eca26d2fa8e2))
+
+## [1.45.0](https://github.com/g0ldyy/comet/compare/v1.44.1...v1.45.0) (2024-11-24)
+
+
+### Features
+
+* debrid-link is now default ([253eadc](https://github.com/g0ldyy/comet/commit/253eadc322e8138f61b638567aaaed9d3c23b85a))
+
+## [1.44.1](https://github.com/g0ldyy/comet/compare/v1.44.0...v1.44.1) (2024-11-24)
+
+
+### Bug Fixes
+
+* postgresql support ([b61480b](https://github.com/g0ldyy/comet/commit/b61480b3091ed62b23e5a42be8a5cc7ad3679692))
+
+## [1.44.0](https://github.com/g0ldyy/comet/compare/v1.43.4...v1.44.0) (2024-11-23)
+
+
+### Features
+
+* new db structure ([8c3a81a](https://github.com/g0ldyy/comet/commit/8c3a81a61fb9f0195c7edd67efcd577dfc2cf458))
+
+
+### Bug Fixes
+
+* db caching issue ([8122689](https://github.com/g0ldyy/comet/commit/812268971d0dcd030df36b004083ee8a922fda5d))
+
+## [1.43.4](https://github.com/g0ldyy/comet/compare/v1.43.3...v1.43.4) (2024-11-21)
+
+
+### Bug Fixes
+
+* correctly handle unsuccessful api calls ([c14195e](https://github.com/g0ldyy/comet/commit/c14195e6027e9fa70cd16245b5bd916b4806901e))
+* redundant get_files on duplicate hashes ([854846f](https://github.com/g0ldyy/comet/commit/854846fb4bff4cff1df9159b2dc4997c35443857))
+
+## [1.43.3](https://github.com/g0ldyy/comet/compare/v1.43.2...v1.43.3) (2024-11-20)
+
+
+### Bug Fixes
+
+* a ([949b83b](https://github.com/g0ldyy/comet/commit/949b83b5f5c53dea7231cd57d829a85f8da533d5))
+* b ([665e840](https://github.com/g0ldyy/comet/commit/665e8407e3fcab3fe3ccb84b60b12c733fc609e8))
+* remove duplicate file extension because wtf ([f39a684](https://github.com/g0ldyy/comet/commit/f39a684f10668a1e2e2d9326bcf3ff5a54e71ac9))
+* year_end for kitsu ([f1f4224](https://github.com/g0ldyy/comet/commit/f1f422440df81cf0b02b469ff37ce9b65a963bea))
+
+## [1.43.2](https://github.com/g0ldyy/comet/compare/v1.43.1...v1.43.2) (2024-11-19)
+
+
+### Bug Fixes
+
+* adult content filter ([f5afeff](https://github.com/g0ldyy/comet/commit/f5afeff6af73098bb11d08988f368d057764bb4c))
+
+## [1.43.1](https://github.com/g0ldyy/comet/compare/v1.43.0...v1.43.1) (2024-11-19)
+
+
+### Bug Fixes
+
+* maxSize reset to 0 ([05ea53b](https://github.com/g0ldyy/comet/commit/05ea53b5b1cbef18b757afacc0c4806d3d90aa51))
+
+## [1.43.0](https://github.com/g0ldyy/comet/compare/v1.42.0...v1.43.0) (2024-11-19)
+
+
+### Features
+
+* ability for the user to toggle trash removal ([89fa2d0](https://github.com/g0ldyy/comet/commit/89fa2d024dca6c7ccab0438893f6a5e45c475d07))
+
+## [1.42.0](https://github.com/g0ldyy/comet/compare/v1.41.1...v1.42.0) (2024-11-19)
+
+
+### Features
+
+* improve year check ([ede4e98](https://github.com/g0ldyy/comet/commit/ede4e98a40839e47de9e201f20ed2619cc03966b))
+
+
+### Bug Fixes
+
+* adult content filter fixed ([ad415dc](https://github.com/g0ldyy/comet/commit/ad415dc9b8ae5276e26a57984cd9a0302568cdf4))
+
+## [1.41.1](https://github.com/g0ldyy/comet/compare/v1.41.0...v1.41.1) (2024-11-19)
+
+
+### Bug Fixes
+
+* improve torrentio/mediafusion parsing ([1318772](https://github.com/g0ldyy/comet/commit/13187728d691b02b60820ba027b200272693c2d8))
+
+## [1.41.0](https://github.com/g0ldyy/comet/compare/v1.40.1...v1.41.0) (2024-11-19)
+
+
+### Features
+
+* title match check aliases system ([36323ac](https://github.com/g0ldyy/comet/commit/36323ac028dc4833c57200100f4e36a170bdb7c2))
+
+## [1.40.1](https://github.com/g0ldyy/comet/compare/v1.40.0...v1.40.1) (2024-11-18)
+
+
+### Bug Fixes
+
+* oupsie ([43b7e37](https://github.com/g0ldyy/comet/commit/43b7e37db6f31e47bba15ef9f7b41b856c9ff1b7))
+
+## [1.40.0](https://github.com/g0ldyy/comet/compare/v1.39.0...v1.40.0) (2024-11-18)
+
+
+### Features
+
+* reverse order results ([15098f3](https://github.com/g0ldyy/comet/commit/15098f379e0e2012e229d275095afe618304567f))
+
+## [1.39.0](https://github.com/g0ldyy/comet/compare/v1.38.0...v1.39.0) (2024-11-18)
+
+
+### Features
+
+* shit filter and adult content check ([fe3ddb6](https://github.com/g0ldyy/comet/commit/fe3ddb6702aac23de8e3ad6b51c56899f3f3ea24))
+
+
+### Bug Fixes
+
+* webui config ([0487af5](https://github.com/g0ldyy/comet/commit/0487af542e3f03a2d95719b4cb7243bc21f8e119))
+
+## [1.38.0](https://github.com/g0ldyy/comet/compare/v1.37.0...v1.38.0) (2024-11-17)
+
+
+### Features
+
+* ability to disable max connection ([9ebcb71](https://github.com/g0ldyy/comet/commit/9ebcb71ef1cd48ed9ac3079838cf4b2da1575cc2))
+* ability to disable max connection [#2](https://github.com/g0ldyy/comet/issues/2) ([412699f](https://github.com/g0ldyy/comet/commit/412699fb55a77069ef17c0e5f826d87cca2d7c8d))
+* ability to disable max connection [#3](https://github.com/g0ldyy/comet/issues/3) ([05fe062](https://github.com/g0ldyy/comet/commit/05fe06294b0471a2cd8e7cfb3c3b96a9863e1f6a))
+* ability to disable max connection [#4](https://github.com/g0ldyy/comet/issues/4) ([a18dceb](https://github.com/g0ldyy/comet/commit/a18dceb01c49f4a0fee50b3afda11b5008da3085))
+* add max results per resolution configuration option ([fefc260](https://github.com/g0ldyy/comet/commit/fefc260b083e46ac062ede04abd694c9841f7c42))
+* add search term ([fdb62ab](https://github.com/g0ldyy/comet/commit/fdb62ab60adb046e92279f7f5c2578d9b54fd8bc))
+* language unknown support ([6f7c79f](https://github.com/g0ldyy/comet/commit/6f7c79f91dffabd28bcce667be6c72837711414b))
+
+
+### Bug Fixes
+
+* fix 2160p issue ([5ca4aa5](https://github.com/g0ldyy/comet/commit/5ca4aa59a0b704f77ab45190f2e03fc83e75023e))
+
+## [1.37.0](https://github.com/g0ldyy/comet/compare/v1.36.1...v1.37.0) (2024-11-15)
+
+
+### Features
+
+* different error message for no cache direct torrent ([10318de](https://github.com/g0ldyy/comet/commit/10318decebf4989fe6416181fceb03ef10b0186f))
+* error message in case its not configured ([c572274](https://github.com/g0ldyy/comet/commit/c572274fc9fc520c85d93bff407fcd033c0f0937))
+
+
+### Bug Fixes
+
+* index error ([e94c8e2](https://github.com/g0ldyy/comet/commit/e94c8e278a610f7ee88d513958407d389d2c0515))
+
+## [1.36.1](https://github.com/g0ldyy/comet/compare/v1.36.0...v1.36.1) (2024-11-14)
+
+
+### Bug Fixes
+
+* something ([5b5a9ce](https://github.com/g0ldyy/comet/commit/5b5a9ce3c341a9e67c29cd6a623640aa3fd7d0cf))
+
+## [1.36.0](https://github.com/g0ldyy/comet/compare/v1.35.3...v1.36.0) (2024-11-14)
+
+
+### Features
+
+* elfhosted debugging ([85912a2](https://github.com/g0ldyy/comet/commit/85912a273b12a5a3fae1b7a4d5546022d304b4de))
+
+## [1.35.3](https://github.com/g0ldyy/comet/compare/v1.35.2...v1.35.3) (2024-11-14)
+
+
+### Bug Fixes
+
+* add trackers to results ([9295fd2](https://github.com/g0ldyy/comet/commit/9295fd2f8315e0e1d4586a059d2910a9c348a62a))
+* magical db fix improving speed by 5000% ([67a20be](https://github.com/g0ldyy/comet/commit/67a20be6b1bac652085d97743e0251fbdaec01ae))
+
+## [1.35.2](https://github.com/g0ldyy/comet/compare/v1.35.1...v1.35.2) (2024-11-14)
+
+
+### Bug Fixes
+
+* sample detection ([fe93bac](https://github.com/g0ldyy/comet/commit/fe93bacf23ee9911d450cd37631b813a7572af2b))
+
+## [1.35.1](https://github.com/g0ldyy/comet/compare/v1.35.0...v1.35.1) (2024-11-14)
+
+
+### Bug Fixes
+
+* json dumps ([267a764](https://github.com/g0ldyy/comet/commit/267a76468ed90382ae2776089da7051cc4ccca05))
+* json lib is not used anymore ([af6d009](https://github.com/g0ldyy/comet/commit/af6d009651cca60b8a5fb3c04a4a585ac40039b0))
+
+## [1.35.0](https://github.com/g0ldyy/comet/compare/v1.34.0...v1.35.0) (2024-11-14)
+
+
+### Features
+
+* faster json stuff and better result ordering ([d8571d1](https://github.com/g0ldyy/comet/commit/d8571d189bda8bf3130695e921d5225dabddf698))
+
+## [1.34.0](https://github.com/g0ldyy/comet/compare/v1.33.0...v1.34.0) (2024-11-14)
+
+
+### Features
+
+* direct torrent!!! omg!!!! no way what ([e621c84](https://github.com/g0ldyy/comet/commit/e621c84237b3514d9b954666c182b135cc686f99))
+
+## [1.33.0](https://github.com/g0ldyy/comet/compare/v1.32.2...v1.33.0) (2024-11-14)
+
+
+### Features
+
+* add media fusion hashes ([ece4600](https://github.com/g0ldyy/comet/commit/ece4600ddec3bfc64cd39ce3fdb667b022c2cd35))
+* custom MediaFusion urls for elfhosted &lt;3 ([bc29eb9](https://github.com/g0ldyy/comet/commit/bc29eb9582dca426ad58cc770f7d7d4d0cd6acd0))
+
+
+### Bug Fixes
+
+* add missing env var ([77ef84a](https://github.com/g0ldyy/comet/commit/77ef84a89306fe1bb63dc0178024a6c28fe6c262))
+* I just want to release ([9bb4a4e](https://github.com/g0ldyy/comet/commit/9bb4a4ecc0c0e9449fc57b37b142025c314c5dda))
+* update hashinfo ([c15206b](https://github.com/g0ldyy/comet/commit/c15206b4b410fc685fbbcd7f31df574553ca6cd5))
+
 ## [1.32.2](https://github.com/g0ldyy/comet/compare/v1.32.1...v1.32.2) (2024-10-04)
 
 
