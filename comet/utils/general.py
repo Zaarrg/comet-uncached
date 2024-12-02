@@ -951,7 +951,7 @@ def get_balanced_hashes(hashes: dict, config: dict, type: str):
 
     max_size = config["maxSize"]
     config_resolutions = [resolution for resolution in config["resolutions"]]
-    include_all_resolutions = "all" in config_resolutions
+    include_all_resolutions = "All" in config_resolutions
     remove_trash = config["removeTrash"]
 
     config_resolutions_order = config.get("resolutionsOrder", [])
@@ -960,7 +960,7 @@ def get_balanced_hashes(hashes: dict, config: dict, type: str):
     }
 
     languages = [language.lower() for language in config["languages"]]
-    include_all_languages = "all" in languages
+    include_all_languages = "All" in languages
     if not include_all_languages:
         config_languages = [
             code
