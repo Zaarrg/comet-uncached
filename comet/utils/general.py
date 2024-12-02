@@ -960,7 +960,7 @@ def get_balanced_hashes(hashes: dict, config: dict, type: str):
     }
 
     languages = [language.lower() for language in config["languages"]]
-    include_all_languages = "All" in languages
+    include_all_languages = "all" in languages
     if not include_all_languages:
         config_languages = [
             code
