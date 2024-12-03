@@ -248,7 +248,7 @@ class Premiumize:
         if magnet_info.get("status") != "finished" and int(magnet_info.get("progress")) < 1:
             download_percentage = magnet_info.get("progress") * 100
             logger.info(
-                f"File {hash}|{index} is still uncached, please wait until its cached! Status: {magnet_info.get("status")} | Progress: {download_percentage:.2f}%"
+                f"File {hash}|{index} is still uncached, please wait until its cached! Status: {magnet_info.get('status')} | Progress: {download_percentage:.2f}%"
             )
             return None
 
