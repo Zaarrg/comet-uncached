@@ -53,11 +53,11 @@
 ### 🔗 **Uncached for Torrentio:**
 1. Navigate to the **Configuration Page**.
 2. Add **Torrentio** under the **Indexers Uncached** section.
-3. 🎉 Done! Torrentio will now support uncached torrents.
+3. 🎉 Done! Torrentio will now show uncached torrents.
 
 ### 📚 **For Other Indexers:**
 1. Go to the **Configuration Page**.
-2. Select the indexers you want to enable.
+2. Select under **Indexers** the indexers you want to enable.
 3. Under **Indexers Uncached**, choose the indexers you want to be considered for uncached torrents.
 
 ### ⚙️ **Other Useful Options:**
