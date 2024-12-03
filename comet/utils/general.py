@@ -225,6 +225,10 @@ def bytes_to_size(bytes: int):
     return f"{round(bytes, 2)} {sizes[i]}"
 
 
+def derive_debrid_key(debrid_key: str):
+    return hashlib.sha256(debrid_key.encode()).hexdigest()
+
+
 def derive_key(token: str, salt: bytes = b'comet_fast') -> bytes:
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
@@ -647,7 +651,7 @@ async def uncached_select_index(
         name: str,
         episode: str,
         torrent_parsed_data: str,
-        debrid_service: Literal["realdebrid", "debridlink"]
+        debrid_service: str
 ) -> Union[int, str]:
     """
     Select the appropriate file index or ID from a list of files based on matching titles.
@@ -670,6 +674,18 @@ async def uncached_select_index(
         "debridlink": {
             "file_name_extractor": lambda file: file.get("name", ""),
             "filter": lambda files: files,  # No filtering for DL
+            "id_getter": lambda file, i: i,
+            "fallback": lambda idx: int(idx),
+        },
+        "alldebrid": {
+            "file_name_extractor": lambda file: file.get("filename", ""),
+            "filter": lambda files: files,
+            "id_getter": lambda file, i: i,
+            "fallback": lambda idx: int(idx),
+        },
+        "premiumize": {
+            "file_name_extractor": lambda file: file.get("path", "").split("/")[-1],
+            "filter": lambda files: files,
             "id_getter": lambda file, i: i,
             "fallback": lambda idx: int(idx),
         },
@@ -732,7 +748,7 @@ async def uncached_select_index(
     return selected_id_or_index
 
 
-async def uncached_db_find_container_id(debrid_service: str, hash: str) -> str:
+async def uncached_db_find_container_id(debrid_key: str, hash: str) -> str:
     """
     Returns first found containerId for the given hash.
     If returned string not empty caching to debrid has been started.
@@ -741,57 +757,78 @@ async def uncached_db_find_container_id(debrid_service: str, hash: str) -> str:
     query = """
     SELECT container_id
     FROM cache
-    WHERE debridService = :debrid_service AND info_hash = :hash AND container_id != ''
+    WHERE debrid_key = :debrid_key AND info_hash = :hash AND container_id != ''
     """
-    result = await database.fetch_one(query, {"hash": hash, "debrid_service": debrid_service})
+    result = await database.fetch_one(query, {"hash": hash, "debrid_key": debrid_key})
     if result:
         return result["container_id"]
     else:
         return ""
 
 
-async def update_torrent_id_uncached_db(debrid_service: str, hash: str, file_index: str, torrent_id: str):
+async def update_torrent_id_uncached_db(debrid_key: str, hash: str, file_index: str, torrent_id: str):
     """
     Sets the Torrent Id for one specific file / uncached torrent
     """
     query = """
     UPDATE cache 
     SET torrent_id = :torrent_id
-    WHERE debridService = :debrid_service AND info_hash = :hash AND file_index = :file_index
+    WHERE debrid_key = :debrid_key AND info_hash = :hash AND file_index = :file_index
     """
     await database.execute(query, {
         "torrent_id": torrent_id,
-        "debrid_service": debrid_service,
+        "debrid_key": debrid_key,
         "hash": hash,
         "file_index": file_index
     })
 
 
-async def update_container_id_uncached_db(debrid_service: str, hash: str, container_id: str):
+async def update_container_id_uncached_db(debrid_key: str, hash: str, container_id: str):
     """
     Sets the Container Id for all uncached torrents with the same hash and debrid key
     """
     query = """
     UPDATE cache 
     SET container_id = :container_id
-    WHERE debridService = :debrid_service AND info_hash = :hash
+    WHERE debrid_key = :debrid_key AND info_hash = :hash
     """
     await database.execute(query, {
         "container_id": container_id,
-        "debrid_service": debrid_service,
+        "debrid_key": debrid_key,
         "hash": hash
     })
 
 
-async def check_uncached(hash: str, file_index: str, debrid_service: str):
+async def check_index(hash: str, file_index: str, debrid_key: str):
+    """
+    Checks if torrent has a torrent_id assigned and returns it
+    """
+    uncached_torrent = await database.fetch_one(
+        """
+        SELECT torrent_id
+        FROM cache
+        WHERE debrid_key = :debrid_key AND info_hash = :hash AND file_index = :file_index
+        """,
+        {"debrid_key": debrid_key, "hash": hash, "file_index": file_index}
+    )
+    if uncached_torrent:
+        if uncached_torrent["torrent_id"] and int(uncached_torrent["torrent_id"]) >= 0:
+            return uncached_torrent["torrent_id"]
+        else:
+            return file_index
+    else:
+        return file_index
+
+
+async def check_uncached(hash: str, file_index: str, debrid_key: str):
     # Fetch uncached torrent data from the database
     uncached_torrent = await database.fetch_one(
         """
         SELECT torrent_id, container_id, link, magnet, data, name, episode
         FROM cache
-        WHERE debridService = :debrid_service AND info_hash = :hash AND file_index = :file_index
+        WHERE debrid_key = :debrid_key AND info_hash = :hash AND file_index = :file_index AND uncached = :uncached
         """,
-        {"debrid_service": debrid_service, "hash": hash, "file_index": file_index}
+        {"debrid_key": debrid_key, "hash": hash, "file_index": file_index, "uncached": True}
     )
 
     if uncached_torrent:
@@ -811,30 +848,48 @@ async def check_uncached(hash: str, file_index: str, debrid_service: str):
         return None
 
 
-async def update_uncached_status(uncached: bool, hash: str, file_index: str, debridService: str):
+async def update_uncached_status(uncached: bool, hash: str, file_index: str, debridService: str, debrid_key: str):
     """
-    Update the uncached flag in both the database column and JSON data field.
+    Updates the uncached flag in both the database column and JSON data field.
     """
     # Fetch and update JSON data
-    row = await database.fetch_one(
+    updater = await database.fetch_one(
+        "SELECT torrent_id FROM cache WHERE info_hash = :hash AND file_index = :file_index AND debridService = :debridService AND debrid_key = :debrid_key",
+        {"hash": hash, "file_index": file_index, "debridService": debridService, "debrid_key": debrid_key}
+    )
+    rows = await database.fetch_all(
         "SELECT data FROM cache WHERE info_hash = :hash AND file_index = :file_index AND debridService = :debridService",
         {"hash": hash, "file_index": file_index, "debridService": debridService}
     )
-    if not row:
+    if not rows or not updater:
         logger.error(f"Error could not find uncached torrent to update.")
         return
-    parsed_data = orjson.loads(row["data"])
-    parsed_data["data"]["uncached"] = uncached
-    updated_data = orjson.dumps(parsed_data).decode("utf-8")
 
-    # Update database
-    await database.execute(
-        """
-        UPDATE cache SET uncached = :uncached, data = :updated_data
-        WHERE info_hash = :hash AND file_index = :file_index AND debridService = :debridService
-        """,
-        {"hash": hash, "file_index": file_index, "debridService": debridService, "uncached": uncached, "updated_data": updated_data}
-    )
+    updates_to_execute = []
+    for row in rows:
+        parsed_data = orjson.loads(row["data"])
+        parsed_data["data"]["uncached"] = uncached
+        updates_to_execute.append({
+            "info_hash": hash,
+            "file_index": file_index,
+            "torrent_id": updater["torrent_id"],
+            "debridService": debridService,
+            "uncached": uncached,
+            "updated_data": orjson.dumps(parsed_data).decode("utf-8"),
+        })
+
+    if updates_to_execute:
+        await database.execute_many(
+            """
+            UPDATE cache 
+            SET uncached = :uncached, data = :updated_data, torrent_id = :torrent_id
+            WHERE info_hash = :info_hash AND file_index = :file_index AND debridService = :debridService
+            """,
+            updates_to_execute
+        )
+    else:
+        logger.error(f"Error could not update uncached torrents.")
+        return
 
 
 async def cache_wipe():
@@ -1327,6 +1382,7 @@ async def add_torrent_to_cache(
         {
             "debridService": config["debridService"],
             "info_hash": sorted_ranked_files[torrent]["infohash"],
+            "debrid_key": derive_debrid_key(config["debridApiKey"]) if sorted_ranked_files[torrent]["data"]["uncached"] else '',
             "name": name,
             "season": season,
             "episode": episode,
@@ -1347,8 +1403,8 @@ async def add_torrent_to_cache(
 
     query = f"""
         INSERT {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}
-        INTO cache (debridService, info_hash, name, season, episode, file_index, torrent_id, container_id, uncached, link, magnet, tracker, data, timestamp)
-        VALUES (:debridService, :info_hash, :name, :season, :episode, :file_index, :torrent_id, :container_id, :uncached, :link, :magnet, :tracker, :data, :timestamp)
+        INTO cache (debridService, info_hash, debrid_key, name, season, episode, file_index, torrent_id, container_id, uncached, link, magnet, tracker, data, timestamp)
+        VALUES (:debridService, :info_hash, :debrid_key, :name, :season, :episode, :file_index, :torrent_id, :container_id, :uncached, :link, :magnet, :tracker, :data, :timestamp)
         {' ON CONFLICT DO NOTHING' if settings.DATABASE_TYPE == 'postgresql' else ''}
     """
 

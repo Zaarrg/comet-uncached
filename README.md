@@ -7,22 +7,79 @@
   </a>
 </p>
 
-# Fork Disclaimer
-- This is a work in progress fork of the official [comet repo](https://github.com/g0ldyy/comet) and will be abandoned once finished and fully implemented there
-- This fork aims to add primarily uncached support but also enhance and add features.
-- To check the current progress and updates check the [todo.md](https://github.com/Zaarrg/comet-uncached/blob/main/todo.md)
-- Stuff might break and not work frequently!
+## ⚠️ **Fork Disclaimer**
+- 🚧 **Work in Progress:** This is a fork of the official [Comet repository](https://github.com/g0ldyy/comet). It will be abandoned once all features are implemented in the original repo.
+- ✨ **Primary Goal:** Add uncached support and enhance features.
+- 🛠️ **Stay Updated:** Check the current progress and updates in the [todo.md](https://github.com/Zaarrg/comet-uncached/blob/main/todo.md).
+- ⚠️ **Caution:** Stuff might break frequently as this is under active development!
 
-# Fork Features
-- Currently only uncached Support for real debrid and Debrid Link
-  - Check [todo.md](https://github.com/Zaarrg/comet-uncached/blob/main/todo.md) for support status
-- Advance language search. Search in different languages.
-- Advance sorting and preferences. Sort by language, rank, seeders, size or completion
-- Customize your results shown in streamio. (Result Order)
-- Encryption of config via TOKEN env
-- Better Url - Shortened url and filename in url included
-  - Use TOKEN env to get short playback urls aswell
-  - Use of token env highly recommend even if encryption not needed allows for shortest possible urls improving player compatibility
+
+## 🌟 **Fork Features**
+- 🔍 **Advanced Language Search:** Search in multiple languages.
+- 🔧 **Advanced Sorting and Preferences:** Sort by language, rank, seeders, size, or completion.
+- 🎛️ **Customizable Results:** Customize how results are shown in Stremio (Result Order).
+- 🔒 **Config Encryption:** Secure your configuration via the `TOKEN` environment variable.
+- 🌐 **Improved URL Handling:**
+    - Shortened URLs with filenames included.
+    - Use the `TOKEN` environment variable for even shorter playback URLs, improving player compatibility.
+    - Highly recommended even if encryption is not needed! As this improved player compatibility
+- 📝 **Updates and Progress:** For detailed notes, see [todo.md](https://github.com/Zaarrg/comet-uncached/blob/main/todo.md).
+
+
+
+## 🌟 **State of Uncached Support**
+
+| Provider       | Status                                      | Notes                                           |
+|----------------|---------------------------------------------|------------------------------------------------|
+| **Real Debrid** | ✅ Full Support                            | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   |
+| **All Debrid**  | ✅ Full Support                            | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   |
+| **Premiumize**  | ✅ Full Support                            | 🔄 *Seasons limit*                             |
+| **Debrid Link** | ✅ Full Support                            | ✨ **DEBRID_TAKE_FIRST**                        |
+| **Torbox**      | ❌ Unsupported                            | 🚧 *Will be added once sign-ups open*          |
+
+
+
+### Explanation of Symbols:
+
+- ✅ **Full Support**: The provider supports uncached torrent functionality.
+- ❌ **Unsupported**: The provider currently does not support uncached torrents.
+- 🔄 **Seasons Limit**: For TV shows, torrents containing entire seasons must fully download before playback begins; individual episodes cannot be played as they complete. This is a technical limitation of the provider.
+- ✨ **DEBRID_TAKE_FIRST**: Supports the environment variable to explicitly return the first e.g. 100 files from the provider, useful for private torrents uploaded via DebridMediaManager or the provider's UI.
+- 🚧 **Work in Progress**: Feature planned but not yet available.
+
+
+## 🚀 **Comet Uncached Run Down**
+
+### 🔗 **Uncached for Torrentio:**
+1. Navigate to the **Configuration Page**.
+2. Add **Torrentio** under the **Indexers Uncached** section.
+3. 🎉 Done! Torrentio will now support uncached torrents.
+
+### 📚 **For Other Indexers:**
+1. Go to the **Configuration Page**.
+2. Select the indexers you want to enable.
+3. Under **Indexers Uncached**, choose the indexers you want to be considered for uncached torrents.
+
+### ⚙️ **Other Useful Options:**
+- By default, all uncached torrents are grouped under the **Uncached Resolution** category.
+- If you prefer uncached torrents to be sorted and treated like normal torrents:
+    1. Deselect **Uncached** under the **Resolutions** section on the Configuration Page.
+    2. This allows for sorting by resolution to function normally.
+
+### 🌍 **Language Support**
+- **Default Behavior:** Comet compares torrent titles to all languages by default.
+- **Language Preference:**
+    - To sort specific languages to the top, select them under **Language Preference**.
+- **Prowlarr/Jackett/Zilean:**
+    - To search these in additional languages, enable **Language Search** for your desired languages.
+    - ⚠️ *Note:* Selecting many languages may significantly increase search time.
+
+### 📋 **Result Order**
+- This determines the order in which results are displayed.
+- To customize:
+    1. Deselect all options.
+    2. Select the options in the order you prefer.
+
 
 # Features
 - The only Stremio addon that can Proxy Debrid Streams to allow use of the Debrid Service on multiple IPs at the same time on the same account!
@@ -40,17 +97,6 @@
 
 # Installation
 To customize your Comet experience to suit your needs, please first take a look at all the [environment variables](https://github.com/g0ldyy/comet/blob/main/.env-sample)!
-## ElfHosted
-A free, public Comet instance is available at https://comet.elfhosted.com
-
-[ElfHosted](https://elfhosted.com) is a geeky [open-source](https://elfhosted.com/open/) PaaS which provides all the "plumbing" (*hosting, security, updates, etc*) for your self-hosted apps. 
-
-ElfHosted offer "one-click" [private Comet instances](https://elfhosted.com/app/comet/), allowing you to customize your indexers, and enabling "Proxy Stream" mode, to permit streaming from multiple source IPs with the same RD token!
-
-> [!IMPORTANT]
-> Comet is a top-tier app in the [ElfHosted app catalogue](https://elfhosted.com/apps/). 30% of your subscription goes to the app developer :heart:
-
-(*[ElfHosted Discord](https://discord.elfhosted.com)*)
 
 ## Self Hosted
 ### From source
@@ -83,6 +129,7 @@ ElfHosted offer "one-click" [private Comet instances](https://elfhosted.com/app/
       -e INDEXER_MANAGER_API_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
       -e INDEXER_MANAGER_INDEXERS='["EXAMPLE1_CHANGETHIS", "EXAMPLE2_CHANGETHIS"]' \
       -e INDEXER_MANAGER_TIMEOUT=30 \
+      -e TOKEN=XXXXXXXXXX \
       -e GET_TORRENT_TIMEOUT=5 \
       ghcr.io/zaarrg/comet-uncached:latest
   ```
@@ -111,7 +158,7 @@ ElfHosted offer "one-click" [private Comet instances](https://elfhosted.com/app/
     - Finally, re-run the docker run command
  
 ### With Docker Compose
-- Copy *compose.yaml* in a directory
+- Copy *docker-compose.yaml* in a directory
 - Copy *env-sample* to *.env* in the same directory
 - Pull the latest version from docker hub
     ```sh
@@ -126,4 +173,4 @@ ElfHosted offer "one-click" [private Comet instances](https://elfhosted.com/app/
 To bypass Real-Debrid's (or AllDebrid) IP blacklist, start a cloudflare-warp container: https://github.com/cmj2002/warp-docker
 
 ## Web UI Showcase
-<img src="https://i.imgur.com/SaD365F.png" />
+<img src="https://i.imgur.com/khJNQOo.png" />

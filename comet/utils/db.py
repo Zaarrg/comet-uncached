@@ -30,7 +30,7 @@ async def setup_database():
             await database.execute("DROP TABLE IF EXISTS cache")
 
         await database.execute(
-            "CREATE TABLE IF NOT EXISTS cache (debridService TEXT, info_hash TEXT, name TEXT, season INTEGER, episode INTEGER, file_index TEXT, torrent_id TEXT, container_id TEXT, link TEXT, magnet TEXT, uncached BOOLEAN, tracker TEXT, data TEXT, timestamp INTEGER)"
+            "CREATE TABLE IF NOT EXISTS cache (debridService TEXT, info_hash TEXT, debrid_key TEXT, name TEXT, season INTEGER, episode INTEGER, file_index TEXT, torrent_id TEXT, container_id TEXT, link TEXT, magnet TEXT, uncached BOOLEAN, tracker TEXT, data TEXT, timestamp INTEGER)"
         )
         await database.execute(
             "CREATE TABLE IF NOT EXISTS download_links (debrid_key TEXT, hash TEXT, file_index TEXT, link TEXT, timestamp INTEGER, PRIMARY KEY (debrid_key, hash, file_index))"

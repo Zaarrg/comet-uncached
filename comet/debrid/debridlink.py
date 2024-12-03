@@ -5,7 +5,7 @@ from RTN import parse
 from aiohttp import FormData
 
 from comet.utils.general import is_video, check_uncached, remove_file_extension, update_torrent_id_uncached_db, \
-    update_container_id_uncached_db, uncached_db_find_container_id, uncached_select_index
+    update_container_id_uncached_db, uncached_db_find_container_id, uncached_select_index, check_index
 from comet.utils.logger import logger
 
 
@@ -202,13 +202,13 @@ class DebridLink:
         )
         return await get_magnet_info.json()
 
-    async def handle_uncached(self, is_uncached: dict, hash: str, index: str, debrid_service: str):
+    async def handle_uncached(self, is_uncached: dict, hash: str, index: str, debrid_key: str):
         container_id = is_uncached.get('container_id', None)
         torrent_id = is_uncached.get('torrent_id', None)
         has_magnet = is_uncached.get('has_magnet', None)
 
         if not container_id:
-            possible_container_id = await uncached_db_find_container_id(debrid_service, hash)
+            possible_container_id = await uncached_db_find_container_id(debrid_key, hash)
             if possible_container_id == "":
                 torrent_link = is_uncached.get('torrent_link')
                 container = await (
@@ -222,7 +222,7 @@ class DebridLink:
                     raise Exception(f"Failed to get magnet ID from Debrid-Link: {hash}")
             else:
                 container_id = possible_container_id
-            await update_container_id_uncached_db(debrid_service, hash, container_id)
+            await update_container_id_uncached_db(debrid_key, hash, container_id)
 
         # Get info about container
         magnet_info = await self.get_info(container_id)
@@ -232,7 +232,7 @@ class DebridLink:
             logger.warning(
                 f"Exception while getting file from Debrid Link, please retry, for {hash}|{index}: {magnet_info}"
             )
-            await update_container_id_uncached_db(debrid_service, hash, "")
+            await update_container_id_uncached_db(debrid_key, hash, "")
             return None
 
         magnet_value = magnet_info["value"][0]
@@ -250,10 +250,10 @@ class DebridLink:
                 )
                 return None
             # Select the right file and get its index by matching titles
-            selected_index = await uncached_select_index(magnet_value["files"], index, is_uncached["name"], is_uncached["episode"], is_uncached["parsed_data"], debrid_service)
+            selected_index = await uncached_select_index(magnet_value["files"], index, is_uncached["name"], is_uncached["episode"], is_uncached["parsed_data"], "debridlink")
             # Save torrentId
             torrent_id = selected_index
-            await update_torrent_id_uncached_db(debrid_service, hash, index, selected_index)
+            await update_torrent_id_uncached_db(debrid_key, hash, index, selected_index)
 
         # Return early if already downloading
         if magnet_value["files"][int(torrent_id)]["downloadPercent"] != 100:
@@ -270,13 +270,14 @@ class DebridLink:
         torrent_data = await self.add_magnet(hash)
         return torrent_data["value"]["files"][int(index)]["downloadUrl"]
 
-    async def generate_download_link(self, hash: str, index: str):
+    async def generate_download_link(self, hash: str, index: str, debrid_key: str):
         try:
             # Check if torrent Uncached
-            is_uncached = await check_uncached(hash, index, "debridlink")
+            is_uncached = await check_uncached(hash, index, debrid_key)
             if is_uncached:
-                return await self.handle_uncached(is_uncached, hash, index, "debridlink")
+                return await self.handle_uncached(is_uncached, hash, index, debrid_key)
             else:
+                index = await check_index(hash, index, debrid_key)
                 return await self.handle_cached(hash, index)
         except Exception as e:
             logger.warning(

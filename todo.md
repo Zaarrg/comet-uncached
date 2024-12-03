@@ -134,6 +134,18 @@
   - Used full lang name instead of code
 - Refactored some sorting functions
 
+### Update 6.3
+- Added All Debrid uncached Support + DEBRID_TAKE_FIRST
+- Added Premiumize uncached Support
+- Switched Uncached cache to use a derived debrid key as identifier
+  - Fixes issue with premiumize and other debrid providers to only showing progress for own files
+  - Uses irreversible derived key to prevent the real api key being saved into the db
+- Some additional small fixes
+- Added help-text for Completion sort
+- Updated readme to fit better
+- Adjusted uncached status update, to update for all users if one user finished caching
+  - If for example 3 users are caching one file and users 1 finishes first it will update the cache status for everyone allowing the other to instantly watch as well
+
 ---
 ### List of new envs
 - DEBRID_TAKE_FIRST - Returns this amount of results straight from debrid then runs through title match check
@@ -151,14 +163,16 @@
 
 ### State of Uncached Support
 - Real Debrid: Full Support (Seasons limit) + DEBRID_TAKE_FIRST
+- All Debrid: Full Support (Seasons limit) + DEBRID_TAKE_FIRST
+- Premiumize: Full Support (Seasons limit)
 - Debrid Link: Full Support + DEBRID_TAKE_FIRST
 
 #### About Season limit
 - For tv shows limited to only cache whole seasons / torrents.
 - This means when caching a torrent with a whole season.
-- And Episode 1 is fully downloaded, it wont be played until the whole season / video files of the torrent is downloaded.
+- And Episode 1 is fully downloaded, it wont be played until the whole season / video files of the torrent are downloaded.
 - In contrast to for example Debrid Link, where as soon as episode 1 is downloaded it is playable, even if the whole season / torrent isn't downloaded
-- This is a technical limit of real debrid
+- This is a technical limit of the debrid provider and not fixable.
 
 ### Cache Timer Explained
 - CACHE_TTL: Optional[int] = 86400 - Stremio Episode/Movie Cache. After 24h the results shown in streamio will be refreshed
@@ -167,12 +181,13 @@
 - Set CACHE_WIPE = 0 to disable background cache clean up
 
 ### Still need to do:
-- Add uncached support for other debrid services as uncached logic is now general enough for it to be nearly copy pasted
-- Add DEBRID_TAKE_FIRST support for the other services
+- Add uncached support + DEBRID_TAKE_FIRST for torbox when signup open again
 - Check jackett/prowlarr missing infohashes sometimes, probably rate limits?
   - Issue 5 might be related
 - Add Language Tags to prowlarr and jackett search
   - Probably add new Language Tag option
 - Improve title match check, for some animes still missing some torrents
   - Torrents with long name in multiple languages fail (Because only if 85% same title it matches)
+- Fix Premiumize file upload. Does not allow any file upload for some reason.
+  - Premiumize magnet fetching slow, maybe fixable.
 

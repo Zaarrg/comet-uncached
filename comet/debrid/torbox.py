@@ -86,7 +86,6 @@ class TorBox:
                             if season not in filename_parsed.seasons:
                                 continue
 
-                        torrent_name_parsed = parse(torrents_by_hashes[torrent["hash"]]["Title"])
                         files[torrent["hash"]] = {
                             "index": torrent_files.index(file),
                             "title": filename,
@@ -123,7 +122,7 @@ class TorBox:
 
         return files
 
-    async def generate_download_link(self, hash: str, index: str):
+    async def generate_download_link(self, hash: str, index: str, debrid_key: str):
         try:
             get_torrents = await self.session.get(
                 f"{self.api_url}/torrents/mylist?bypass_cache=true"

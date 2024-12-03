@@ -34,7 +34,7 @@ from comet.utils.general import (
     get_balanced_hashes,
     format_title, add_uncached_files, get_localized_titles, get_language_codes, get_client_ip,
     language_to_country_code, check_completion, short_encrypt,
-    add_torrent_to_cache, update_uncached_status
+    add_torrent_to_cache, update_uncached_status, derive_debrid_key
 )
 from comet.utils.logger import logger
 from comet.utils.models import database, rtn, settings, trackers
@@ -365,7 +365,11 @@ async def stream(
 
 
         if settings.DEBRID_TAKE_FIRST > 0:
-            if config["debridService"] == "debridlink" or config["debridService"] == "realdebrid":
+            if (
+                    config["debridService"] == "debridlink" or
+                    config["debridService"] == "realdebrid" or
+                    config["debridService"] == "alldebrid"
+            ):
                 tasks.append(debrid.get_first_files(settings.DEBRID_TAKE_FIRST))
 
         if settings.SCRAPE_MEDIAFUSION:
@@ -664,12 +668,13 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
                 )
                 else "",
             )
-            download_link = await debrid.generate_download_link(hash, index)
+            derived_key = derive_debrid_key(config["debridApiKey"])
+            download_link = await debrid.generate_download_link(hash, index, derived_key)
 
             if not download_link:
                 return FileResponse("comet/assets/uncached.mp4")
-            # Update uncached Torrent in the db
-            await update_uncached_status(False, hash, index, config["debridService"])
+            # Update uncached Torrents in the db
+            await update_uncached_status(False, hash, index, config["debridService"], derived_key)
 
             # Cache the new download link
             await database.execute(
