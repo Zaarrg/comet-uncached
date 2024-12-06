@@ -1308,8 +1308,9 @@ async def search_imdb_id(search_query: str, session: ClientSession):
         endYear = main_data["releaseYear"]["endYear"] if main_data["releaseYear"]["endYear"] else ""
         type = main_data["titleType"]["id"]
         genres = []
-        for genre in main_data["titleGenres"]["genres"]:
-            genres.append(genre["genre"]["text"])
+        if main_data["titleGenres"] and main_data["titleGenres"]["genres"] and len(main_data["titleGenres"]["genres"]) > 0:
+            for genre in main_data["titleGenres"]["genres"]:
+                genres.append(genre["genre"]["text"])
 
         return {
             "id": imdb_id,
