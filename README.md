@@ -19,6 +19,7 @@
 - 🔧 **Advanced Sorting and Preferences:** Sort by language, rank, seeders, size, or completion.
 - 🎛️ **Customizable Results:** Customize how results are shown in Stremio (Result Order).
 - 🔒 **Config Encryption:** Secure your configuration via the `TOKEN` environment variable.
+- 🗂️ **Debrid Catalog:** View your recently uploaded files in Stremio as catalog
 - 🌐 **Improved URL Handling:**
     - Shortened URLs with filenames included.
     - Use the `TOKEN` environment variable for even shorter playback URLs, improving player compatibility.
@@ -53,9 +54,10 @@
 ## 🚀 **Comet Uncached Run Down**
 
 ### 🔗 **Uncached for Torrentio:**
-1. Navigate to the **Configuration Page**.
-2. Add **Torrentio** under the **Indexers Uncached** section.
-3. 🎉 Done! Torrentio will now show uncached torrents.
+1. Add **torrentio** to the `INDEXER_MANAGER_INDEXERS` environment variable
+2. Navigate to the **Configuration Page**.
+3. Add **Torrentio** under the **Indexers Uncached** section.
+4. 🎉 Done! Torrentio will now show uncached torrents.
 
 ### 📚 **For Other Indexers:**
 1. Go to the **Configuration Page**.
@@ -146,7 +148,7 @@ For a full docker example check the [docker-compose.yaml](https://github.com/Zaa
     -e INDEXER_MANAGER_TYPE=jackett \
     -e INDEXER_MANAGER_URL=http://127.0.0.1:9117 \
     -e INDEXER_MANAGER_API_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
-    -e INDEXER_MANAGER_INDEXERS='["EXAMPLE1_CHANGETHIS", "EXAMPLE2_CHANGETHIS"]' \
+    -e INDEXER_MANAGER_INDEXERS='["EXAMPLE1_CHANGETHIS", "EXAMPLE2_CHANGETHIS", "torrentio"]' \
     -e INDEXER_MANAGER_TIMEOUT=30 \
     -e TOKEN=XXXXXXXXXX \
     -e GET_TORRENT_TIMEOUT=5 \
