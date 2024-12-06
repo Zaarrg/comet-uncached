@@ -154,6 +154,8 @@ class AllDebrid:
                         "InfoHash": file['hash'],
                         "Size": file["size"],
                         "Tracker": "alldebrid",
+                        "Id": file["id"],
+                        "Status": file["status"]
                     }
                 )
             logger.info(f"Retrieved {len(results)} torrents explicitly from All-Debrid")

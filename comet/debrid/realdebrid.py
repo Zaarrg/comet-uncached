@@ -61,6 +61,8 @@ class RealDebrid:
                         "InfoHash": file['hash'],
                         "Size": file["bytes"],
                         "Tracker": "realdebrid",
+                        "Id": file["id"],
+                        "Status": file["status"]
                     }
                 )
             logger.info(f"Retrieved {len(results)} torrents explicitly from Real-Debrid")

@@ -111,12 +111,27 @@ async def manifest(b64config: str = None):
         "name": f"{settings.ADDON_NAME}{(' | ' + debrid_extension) if debrid_extension is not None else ''}",
         "description": "Stremio's fastest torrent/debrid search add-on.",
         "version": "1.0.0",
-        "catalogs": [],
+        "catalogs": [
+            {
+                "id": "comet-" + config["debridService"],
+                "name": "Comet " + config["debridService"],
+                "type": "other",
+            }
+        ],
         "resources": [
             {
                 "name": "stream",
                 "types": ["movie", "series"],
-                "idPrefixes": ["tt", "kitsu"],
+                "idPrefixes": ["tt", "kitsu", "comet-" + config["debridService"]],
+            },
+            {
+                "name": "meta",
+                "types": [
+                    "other"
+                ],
+                "idPrefixes": [
+                    "comet-" + config["debridService"]
+                ]
             }
         ],
         "types": ["movie", "series", "anime", "other"],

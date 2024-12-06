@@ -148,6 +148,12 @@ class Premiumize:
         )
         return await add_magnet.json()
 
+    async def add_magnet_uncached(self, hash: str):
+        add_magnet = await self.session.post(
+            f"{self.api_url}/transfer/create?apikey={self.debrid_api_key}&src=magnet:?xt=urn:btih:{hash}",
+        )
+        return await add_magnet.json()
+
     async def add_file(self, torrent_link: str):
         # Download uncached torrent if it has only a link
         async with self.session.get(torrent_link) as resp:
@@ -224,7 +230,7 @@ class Premiumize:
             if possible_container_id == "":
                 torrent_link = is_uncached.get('torrent_link')
                 container = await (
-                    self.add_magnet(hash) if has_magnet or not torrent_link
+                    self.add_magnet_uncached(hash) if has_magnet or not torrent_link
                     else self.add_file(torrent_link)
                 )
                 if not container:

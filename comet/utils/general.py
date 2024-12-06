@@ -184,8 +184,54 @@ translation_table = str.maketrans(translation_table)
 info_hash_pattern = re.compile(r"\b([a-fA-F0-9]{40})\b")
 
 
+catalog_config = {
+    "realdebrid": {
+        "amount": 500,
+        "preview_filter": lambda files: [file for file in files if file.get('Status') == "downloaded"],
+        "meta_filter": lambda files: [file for file in files if file.get('selected') != "0" and is_video(file.get('path'))],
+        "files_getter": lambda torrent: torrent.get("files"),
+        "title_getter": lambda torrent: torrent.get("filename"),
+        "torrent_id_getter": lambda torrent: torrent.get("id"),
+        "file_id_getter": lambda file, i: file.get("id"),
+        "file_name_getter": lambda file: file.get("path"),
+        "hash_getter": lambda torrent: torrent.get("hash"),
+    },
+    "debridlink": {
+        "amount": 50,
+        "preview_filter": lambda files: [file for file in files if int(file.get('Status')) == 100],
+        "meta_filter": lambda files: [file for file in files if int(file.get('downloadPercent')) == 100 and is_video(file.get('name'))],
+        "files_getter": lambda torrent: torrent.get("value")[0].get("files"),
+        "title_getter": lambda torrent: torrent.get("value")[0].get("name"),
+        "torrent_id_getter": lambda torrent: torrent.get("value")[0].get("id"),
+        "file_id_getter": lambda file, i: i,
+        "file_name_getter": lambda file: file.get("name"),
+        "hash_getter": lambda torrent: torrent.get("value")[0].get("hashString"),
+    },
+    "alldebrid": {
+        "amount": 100,
+        "preview_filter": lambda files: [file for file in files if file.get('Status') == "Ready"],
+        "meta_filter": lambda files: [file for file in files if is_video(file.get('filename'))],
+        "files_getter": lambda torrent: torrent.get("data").get("magnets").get("links"),
+        "title_getter": lambda torrent: torrent.get("data").get("magnets").get("filename"),
+        "torrent_id_getter": lambda torrent: str(torrent.get("data").get("magnets").get("id")),
+        "file_id_getter": lambda file, i: i,
+        "file_name_getter": lambda file: file.get("filename"),
+        "hash_getter": lambda torrent: torrent.get("data").get("magnets").get("hash"),
+    }
+}
+
+
 def translate(title: str):
     return title.translate(translation_table)
+
+
+def clean_titles(torrent_name):
+    """
+    Extracts the main title from a torrent name by removing tags, subtitles, and additional information.
+    Captures the title up to the first delimiter like `[`, `(`, `|`, `/`, or `-`.
+    """
+    match = re.search(r'^[^\[\]\(\)]*?([A-Za-z0-9\s\']+?)(?=\s*[\[\(\|/-])', torrent_name)
+    return match.group(1).strip() if match else torrent_name.strip()
 
 
 VIDEO_FILE_EXTENSIONS = [
@@ -194,9 +240,6 @@ VIDEO_FILE_EXTENSIONS = [
     ".mpg",".mpeg",".mpv",".mng",".mpe",".mxf",".nsv",".ogg",".ogv",".qt",
     ".rm",".rmvb",".roq",".svi",".webm",".wmv",".yuv"
 ]
-
-
-
 
 
 def is_video(title: str):
@@ -624,6 +667,7 @@ async def filter(
                 results.append((index, True))
                 continue
 
+            parsed.parsed_title = clean_titles(parsed.parsed_title)
             if parsed.parsed_title and not title_match(
                     name, parsed.parsed_title, aliases=aliases
             ):
@@ -862,7 +906,7 @@ async def update_uncached_status(uncached: bool, hash: str, file_index: str, deb
         {"hash": hash, "file_index": file_index, "debridService": debridService}
     )
     if not rows or not updater:
-        logger.error(f"Error could not find uncached torrent to update.")
+        # Return as it probably was a cached torrent being played
         return
 
     updates_to_execute = []
@@ -1115,13 +1159,6 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
     def sort_by_resolution(res):
         return resolution_index_map.get(res, len(config_resolutions_order))
 
-    def sort_uncached_by_seeders(sorted_hashes_by_resolution):
-        if "Uncached" in sorted_hashes_by_resolution:
-            sorted_hashes_by_resolution["Uncached"].sort(
-                key=lambda hash_key: -int(hashes[hash_key]["data"].get("seeders", 0))
-            )
-        return sorted_hashes_by_resolution
-
     def sort_by_resolution_then_rank():
         sorted_hashes_by_resolution = {
             k: v for k, v in sorted(hashes_by_resolution.items(), key=lambda item: sort_by_resolution(item[0]))
@@ -1129,7 +1166,7 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
         for res, hash_list in sorted_hashes_by_resolution.items():
             hash_list.sort(key=lambda hash_key: (
             -int(hashes[hash_key]["data"].get("rank", 0)), -hashes[hash_key]["data"].get("size", 0)))
-        return sort_uncached_by_seeders(sorted_hashes_by_resolution)
+        return sorted_hashes_by_resolution
 
     def sort_by_resolution_then_seeders():
         sorted_hashes_by_resolution = {
@@ -1137,7 +1174,7 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
         }
         for res, hash_list in sorted_hashes_by_resolution.items():
             hash_list.sort(key=lambda hash_key: -int(hashes[hash_key]["data"].get("seeders", 0)))
-        return sort_uncached_by_seeders(sorted_hashes_by_resolution)
+        return sorted_hashes_by_resolution
 
     def sort_by_resolution_then_size():
         sorted_hashes_by_resolution = {
@@ -1145,7 +1182,7 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
         }
         for res, hash_list in sorted_hashes_by_resolution.items():
             hash_list.sort(key=lambda hash_key: -hashes[hash_key]["data"].get("size", 0))
-        return sort_uncached_by_seeders(sorted_hashes_by_resolution)
+        return sorted_hashes_by_resolution
 
     def prioritize_languages(sorted_hashes_by_resolution):
         """Prioritize torrents by languages according to config_languages_preference."""
@@ -1185,20 +1222,9 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
     def prioritize_completion(sorted_hashes_by_resolution):
         if type != "series":
             return sorted_hashes_by_resolution
-
         for res, hash_list in sorted_hashes_by_resolution.items():
             complete = [hash_key for hash_key in hash_list if hashes[hash_key]["data"].get("complete", False)]
             incomplete = [hash_key for hash_key in hash_list if hash_key not in complete]
-
-            # Sort complete seasons based on the original sorting criteria
-            if sort_type == "Sort_by_Resolution_then_Rank":
-                complete.sort(key=lambda hash_key: (
-                -int(hashes[hash_key]["data"].get("rank", 0)), -hashes[hash_key]["data"].get("size", 0)))
-            elif sort_type == "Sort_by_Resolution_then_Seeders":
-                complete.sort(key=lambda hash_key: -int(hashes[hash_key]["data"].get("seeders", 0)))
-            elif sort_type == "Sort_by_Resolution_then_Size":
-                complete.sort(key=lambda hash_key: -hashes[hash_key]["data"].get("size", 0))
-
             sorted_hashes_by_resolution[res] = complete + incomplete
         return sorted_hashes_by_resolution
 
@@ -1251,6 +1277,57 @@ def format_metadata(data: dict):
         extras.append(data["group"])
 
     return "|".join(extras)
+
+
+async def search_imdb_id(search_query: str, session: ClientSession):
+    headers = {
+        "content-type": "application/json"
+    }
+    params = {
+        "operationName": "AdvancedTitleSearch",
+        "variables": f'{{"first":2,"locale":"en-GB","sortBy":"POPULARITY","sortOrder":"ASC","titleTextConstraint":{{"searchTerm":"{search_query}"}}}}',
+        "extensions": '{"persistedQuery":{"sha256Hash":"60a7b8470b01671336ffa535b21a0a6cdaf50267fa2ab55b3e3772578a8c1f00","version":1}}'
+    }
+    try:
+        gathered_results = await session.get(f'https://caching.graphql.imdb.com/', params=params, headers=headers)
+        result = await gathered_results.json()
+        if not result or result["data"]["advancedTitleSearch"]["total"] == 0:
+            logger.warning(
+                f"Exception while searching for imdb id"
+            )
+            return None
+
+        main_data = result["data"]["advancedTitleSearch"]["edges"][0]["node"]["title"]
+
+        title = main_data["titleText"]["text"]
+        imdb_id = main_data["id"]
+        poster = main_data["primaryImage"]["url"]
+        description = main_data["plot"]["plotText"]["plainText"]
+        imdbRating = main_data["ratingsSummary"]["aggregateRating"]
+        startYear = main_data["releaseYear"]["year"]
+        endYear = main_data["releaseYear"]["endYear"] if main_data["releaseYear"]["endYear"] else ""
+        type = main_data["titleType"]["id"]
+        genres = []
+        for genre in main_data["titleGenres"]["genres"]:
+            genres.append(genre["genre"]["text"])
+
+        return {
+            "id": imdb_id,
+            "title": title,
+            "poster": poster,
+            "description": description,
+            "imdbRating": imdbRating,
+            "genres": genres,
+            "startYear": startYear,
+            "endYear": endYear,
+            "type": type
+        }
+
+    except Exception as e:
+        logger.warning(
+            f"Exception while searching imdb: {e}"
+        )
+        return None
 
 
 async def get_localized_titles(language_codes, country_codes, id: str, session: ClientSession):

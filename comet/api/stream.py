@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import time
 import uuid
 from urllib.parse import quote
@@ -17,7 +18,7 @@ from fastapi.responses import (
 )
 
 from starlette.background import BackgroundTask
-from RTN import Torrent, sort_torrents
+from RTN import Torrent, sort_torrents, parse
 from starlette.responses import FileResponse
 
 from comet.debrid.manager import getDebrid
@@ -34,7 +35,8 @@ from comet.utils.general import (
     get_balanced_hashes,
     format_title, add_uncached_files, get_localized_titles, get_language_codes, get_client_ip,
     language_to_country_code, check_completion, short_encrypt,
-    add_torrent_to_cache, update_uncached_status, derive_debrid_key
+    add_torrent_to_cache, update_uncached_status, derive_debrid_key, search_imdb_id, is_video, clean_titles,
+    catalog_config
 )
 from comet.utils.logger import logger
 from comet.utils.models import database, rtn, settings, trackers
@@ -53,6 +55,183 @@ async def stream_noconfig(request: Request, type: str, id: str):
             }
         ]
     }
+
+
+@streams.get("/{b64config}/catalog/other/{id}.json")
+async def stream(
+        request: Request,
+        b64config: str,
+):
+    config = config_check(b64config)
+    if not config:
+        return {
+            "metas": [
+                {
+                    "id": "comet-" + config["debridService"],
+                    "type": "other",
+                    "name": "[⚠️] Comet Invalid Comet config.",
+                    "description": "The provided config is invalid. Try reinstalling your addon.",
+                }
+            ],
+            "cacheMaxAge": 0
+        }
+
+    if config["debridService"] not in catalog_config:
+        return {
+            "metas": [
+                {
+                    "id": "comet-" + config["debridService"],
+                    "type": "other",
+                    "name": "[⚠️] Comet Provider not Supported.",
+                    "description": "Debrid Provider is not Supported. Only Debrid-Link, Real-Debrid and All-Debrid.",
+                }
+            ],
+            "cacheMaxAge": 0
+        }
+
+    connector = aiohttp.TCPConnector(limit=0)
+    async with aiohttp.ClientSession(
+            connector=connector, raise_for_status=True
+    ) as session:
+        debrid = getDebrid(session, config, get_client_ip(request))
+        debrid_config = catalog_config[config["debridService"]]
+        debrid_filter = debrid_config["preview_filter"]
+
+        files = await debrid.get_first_files(debrid_config["amount"])
+
+        filter_files = debrid_filter(files)
+
+        metas_list = []
+        for file in filter_files:
+            metas_list.append({
+                "id": f"comet-{config['debridService']}-{file['Id']}",
+                "type": "other",
+                "name": file["Title"],
+            })
+        return {
+            "metas": metas_list,
+            "cacheMaxAge": 0
+        }
+
+
+@streams.get("/{b64config}/meta/other/{id}.json")
+async def stream(
+        request: Request,
+        b64config: str,
+        id: str,
+):
+    config = config_check(b64config)
+    if not config:
+        return {
+            "metas": [
+                {
+                    "id": "comet-" + config["debridService"],
+                    "type": "other",
+                    "name": "[⚠️] Comet Invalid Comet config.",
+                    "description": "Invalid Comet config.",
+                }
+            ],
+            "cacheMaxAge": 0
+        }
+
+    connector = aiohttp.TCPConnector(limit=0)
+    async with aiohttp.ClientSession(
+            connector=connector, raise_for_status=True
+    ) as session:
+        debrid = getDebrid(session, config, get_client_ip(request))
+        debrid_id = id.split("-")[-1]
+        torrent = await debrid.get_info(debrid_id)
+
+        debrid_config = catalog_config[config["debridService"]]
+        debrid_meta_filter = debrid_config["meta_filter"]
+        debrid_file_getter = debrid_config["files_getter"]
+        debrid_title_getter = debrid_config["title_getter"]
+        debrid_torrent_id_getter = debrid_config["torrent_id_getter"]
+        debrid_hash_getter = debrid_config["hash_getter"]
+
+        debrid_file_id_getter = debrid_config["file_id_getter"]
+        debrid_file_name_getter = debrid_config["file_name_getter"]
+
+        files = debrid_file_getter(torrent)
+        files = debrid_meta_filter(files)
+
+        filename = debrid_title_getter(torrent)
+        torrent_id = debrid_torrent_id_getter(torrent)
+        info_hash = debrid_hash_getter(torrent)
+        parsed_data = parse(filename)
+
+        imdb_data = await search_imdb_id(clean_titles(parsed_data.parsed_title), session)
+
+        short_config = b64config
+        if settings.TOKEN:
+            short_config = {
+                "debridApiKey": config["debridApiKey"],
+                "debridStreamProxyPassword": config["debridStreamProxyPassword"],
+                "debridService": config["debridService"]
+            }
+            short_config = short_encrypt(orjson.dumps(short_config).decode("utf-8"), settings.TOKEN)
+
+        videos = []
+        for i, file in enumerate(files):
+            file_id = debrid_file_id_getter(file, i)
+            file_name = debrid_file_name_getter(file)
+
+            url_friendly_file = quote(file_name.replace('/', '-'), safe='')
+            parsed_data = parse(file_name)
+
+            video_data = {
+                "id": f"comet-{config['debridService']}-{file_id}",
+                "title": file_name,
+                "streams": [
+                    {
+                        "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{short_config}/playback/{info_hash}/{file_id}/{url_friendly_file}",
+                        "behaviorHints": {
+                            "filename": file_name,
+                            "bingeGroup": "comet|" + torrent_id,
+                        },
+                    }
+                ],
+            }
+            if parsed_data.seasons:
+                video_data["season"] = parsed_data.seasons[0]
+            if parsed_data.episodes:
+                video_data["episode"] = parsed_data.episodes[0]
+
+            if imdb_data and video_data.get("episode"):
+                season = video_data.get("season", 1)
+                video_data["thumbnail"] = f"https://episodes.metahub.space/{imdb_data['id']}/{season}/{video_data['episode']}/w780.jpg"
+
+            if imdb_data and not video_data.get("thumbnail", None):
+                video_data["thumbnail"] = f"https://images.metahub.space/background/small/{imdb_data['id']}/img"
+
+            videos.append(video_data)
+
+        # Sort stuff that are not episodes like samples to the beginning to show them at the end in stremio ui
+        videos.sort(key=lambda video: (video.get("episode") is not None, -int(video["episode"]) if "episode" in video else 0))
+
+        meta_data = {
+            "id": f"comet-{config['debridService']}-{torrent_id}",
+            "type": "other",
+            "name": filename,
+            "infoHash": info_hash,
+            "videos": videos,
+        }
+
+        if imdb_data:
+            meta_data["description"] = imdb_data["description"]
+            meta_data["imdbRating"] = imdb_data["imdbRating"]
+            meta_data["genres"] = imdb_data["genres"]
+            meta_data["releaseInfo"] = f"{imdb_data['startYear']}-{imdb_data['endYear']}"
+            meta_data["logo"] = f"https://images.metahub.space/logo/medium/{imdb_data['id']}/img"
+            meta_data["poster"] = f"https://images.metahub.space/poster/medium/{imdb_data['id']}/img"
+            meta_data["background"] = f"https://images.metahub.space/background/medium/{imdb_data['id']}/img"
+
+        result = {
+            "meta": meta_data,
+            "cacheMaxAge": 0
+        }
+
+        return result
 
 
 @streams.get("/{b64config}/stream/{type}/{id}.json")

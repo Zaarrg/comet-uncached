@@ -784,6 +784,10 @@
                     function populateSelect(selectId, options) {
                         const selectElement = document.getElementById(selectId);
                         options.forEach(option => {
+                            if (selectId === 'indexers' && option.toLowerCase() === 'torrentio') {
+                                return
+                            }
+
                             const optionElement = document.createElement("sl-option");
                             optionElement.value = option;
 

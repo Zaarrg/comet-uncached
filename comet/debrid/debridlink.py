@@ -72,6 +72,8 @@ class DebridLink:
                         "InfoHash": file['hashString'],
                         "Size": file["totalSize"],
                         "Tracker": "debridlink",
+                        "Id": file["id"],
+                        "Status": file["status"]
                     }
                 )
             logger.info(f"Retrieved {len(results)} torrents explicitly from Debrid Link")

@@ -146,6 +146,19 @@
 - Adjusted uncached status update, to update for all users if one user finished caching
   - If for example 3 users are caching one file and users 1 finishes first it will update the cache status for everyone allowing the other to instantly watch as well
 
+### Update 6.4
+- Improved title match check, some better results for anime
+  - Cleans parsed title of RTN as it sometimes had alternative titles
+- Added Debrid Catalog
+  - Added Debrid Catalog under Stremio - Discover - Others - Comet RealDebrid for example
+  - Added get imdb id by title - Used to get imdb id to fill meta data for catalog
+  - Catalog Supported by everything that supports DEBRID_TAKE_FRIST aswell
+- Fixed sorting not working if Uncached selected under Resolution
+  - [Releated Issue solved](https://github.com/Zaarrg/comet-uncached/issues/9)
+- Updated rest of readme
+- Removed torrentio from normal indexers as it is only needed under Indexers Uncached (WebUI visual)
+- Fixed Premiumize wrong api endpoint
+
 ---
 ### List of new envs
 - DEBRID_TAKE_FIRST - Returns this amount of results straight from debrid then runs through title match check
@@ -186,8 +199,7 @@
   - Issue 5 might be related
 - Add Language Tags to prowlarr and jackett search
   - Probably add new Language Tag option
-- Improve title match check, for some animes still missing some torrents
-  - Torrents with long name in multiple languages fail (Because only if 85% same title it matches)
 - Fix Premiumize file upload. Does not allow any file upload for some reason.
   - Premiumize magnet fetching slow, maybe fixable.
+- Maybe add separate sorting for uncached links.
 
