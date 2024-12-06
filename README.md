@@ -84,6 +84,12 @@
     1. Deselect all options.
     2. Select the options in the order you prefer.
 
+### 🗂️ **Supports Catalog:**
+1. Navigate to **Discover -> Others -> Comet {Debrid Provider}** in Stremio to view and play recently uploaded files from your Debrid account.
+2. Enjoy seamless access to your debrid uploads directly in Stremio. 🎉
+
+💡 **Note:** If the catalog does not show up, try removing and re-adding the Comet addon in Stremio.
+
 ### 📋 **Sorting Order**
 - Sorting follows a fixed hierarchical order:
     1. **Resolution**: Torrents are grouped and sorted by resolution.
