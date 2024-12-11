@@ -3,7 +3,7 @@ import asyncio
 
 from RTN import parse
 
-from comet.utils.general import is_video, check_completion
+from comet.utils.general import is_video, check_completion, extra_file_pattern
 from comet.utils.logger import logger
 
 
@@ -72,7 +72,7 @@ class TorBox:
                         if not is_video(filename):
                             continue
 
-                        if "sample" in filename.lower():
+                        if extra_file_pattern.search(filename):
                             continue
 
                         filename_parsed = parse(filename)
@@ -108,7 +108,7 @@ class TorBox:
                         if not is_video(filename):
                             continue
 
-                        if "sample" in filename.lower():
+                        if extra_file_pattern.search(filename):
                             continue
 
                         files[torrent["hash"]] = {

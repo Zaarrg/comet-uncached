@@ -5,7 +5,7 @@ from RTN import parse
 
 from comet.utils.general import is_video, check_uncached, check_completion, remove_file_extension, \
     update_container_id_uncached_db, update_torrent_id_uncached_db, uncached_db_find_container_id, \
-    uncached_select_index, check_index
+    uncached_select_index, check_index, extra_file_pattern
 from comet.utils.logger import logger
 from comet.utils.models import settings, database
 
@@ -109,7 +109,7 @@ class RealDebrid:
                         if not is_video(filename):
                             continue
 
-                        if "sample" in filename.lower():
+                        if extra_file_pattern.search(filename):
                             continue
 
                         filename_parsed = parse(filename)
@@ -144,7 +144,7 @@ class RealDebrid:
                         if not is_video(filename):
                             continue
 
-                        if "sample" in filename.lower():
+                        if extra_file_pattern.search(filename):
                             continue
 
                         files[hash] = {
@@ -278,7 +278,7 @@ class RealDebrid:
                 )
                 return None
             # Select the right file and get its index by matching titles
-            selected_id = await uncached_select_index(magnet_info["files"], index, is_uncached["name"], is_uncached["episode"], is_uncached["parsed_data"], "realdebrid")
+            selected_id = await uncached_select_index(magnet_info["files"], index, is_uncached["name"], is_uncached["episode"], is_uncached["season"], is_uncached["parsed_data"], "realdebrid")
             # Save torrentId (rd torrent id is index+1 or read from "id")
             torrent_id = selected_id
             await update_torrent_id_uncached_db(debrid_key, hash, index, selected_id)

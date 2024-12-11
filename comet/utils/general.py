@@ -182,6 +182,7 @@ translation_table = {
 
 translation_table = str.maketrans(translation_table)
 info_hash_pattern = re.compile(r"\b([a-fA-F0-9]{40})\b")
+extra_file_pattern = re.compile(r"\b(sample|ncop|nced|op|ed|extras|special|omake|ova|ona|oad|pv|cm|promo|trailer|preview|teaser|creditless|behind[ _-]?the[ _-]?scenes|making[ _-]?of|deleted[ _-]?scenes)\b", re.IGNORECASE)
 
 
 catalog_config = {
@@ -694,6 +695,7 @@ async def uncached_select_index(
         index: Union[int, str],
         name: str,
         episode: str,
+        season: str,
         torrent_parsed_data: str,
         debrid_service: str
 ) -> Union[int, str]:
@@ -763,27 +765,29 @@ async def uncached_select_index(
 
     for i, file in enumerate(files):
         file_name = file_name_extractor(file)
+        if extra_file_pattern.search(file_name):
+            continue
         file_name_parsed = parse(file_name)
 
         if episode:
-            if len(file_name_parsed.episodes) > 0 and file_name_parsed.episodes[0] == episode:
+            if len(file_name_parsed.episodes) > 0 and file_name_parsed.episodes[0] == int(episode):
+                if len(file_name_parsed.seasons) > 0 and int(season) in file_name_parsed.seasons:
+                    selected_id_or_index = id_getter(file, i)
+                    break
                 selected_id_or_index = id_getter(file, i)
-                break
 
         # Check in case movie. Uncached movies have always index 0 as placeholder. Shows index > 0 (index = episode)
         if (
-                int(index) == 0 and
-                file_name_parsed.normalized_title == torrent_parsed_data["data"]["normalized_title"] and
-                file_name_parsed.year == torrent_parsed_data["data"]["year"] and
-                file_name_parsed.resolution == torrent_parsed_data["data"]["resolution"] and
-                "sample" not in file_name_parsed.raw_title.lower()
+                (int(index) == 0 and file_name_parsed.normalized_title == torrent_parsed_data["data"]["normalized_title"])
+                or
+                (int(index) == 0 and clean_titles(file_name_parsed.normalized_title) == clean_titles(torrent_parsed_data["data"]["normalized_title"]))
         ):
             selected_id_or_index = id_getter(file, i)
             break
 
     # Fallback: Use service-specific fallback logic
     if selected_id_or_index is None:
-        if index > len(files)-1:
+        if int(index) > len(files)-1:
             index = 0
         selected_id_or_index = fallback(index)
         logger.warning(
@@ -868,7 +872,7 @@ async def check_uncached(hash: str, file_index: str, debrid_key: str):
     # Fetch uncached torrent data from the database
     uncached_torrent = await database.fetch_one(
         """
-        SELECT torrent_id, container_id, link, magnet, data, name, episode
+        SELECT torrent_id, container_id, link, magnet, data, name, episode, season
         FROM cache
         WHERE debrid_key = :debrid_key AND info_hash = :hash AND file_index = :file_index AND uncached = :uncached
         """,
@@ -882,6 +886,7 @@ async def check_uncached(hash: str, file_index: str, debrid_key: str):
         return {
             "name": uncached_torrent["name"],
             "episode": uncached_torrent["episode"],
+            "season": uncached_torrent["season"],
             "parsed_data": uncached_torrent["data"],
             "torrent_id": uncached_torrent["torrent_id"],
             "container_id": uncached_torrent["container_id"],

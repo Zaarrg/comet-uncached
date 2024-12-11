@@ -4,7 +4,8 @@ import asyncio
 from RTN import parse
 
 from comet.utils.general import is_video, check_completion, check_uncached, uncached_db_find_container_id, \
-    update_container_id_uncached_db, update_torrent_id_uncached_db, uncached_select_index, check_index
+    update_container_id_uncached_db, update_torrent_id_uncached_db, uncached_select_index, check_index, \
+    extra_file_pattern
 from comet.utils.logger import logger
 
 
@@ -91,7 +92,7 @@ class Premiumize:
 
                     filename = filenames[index]
 
-                    if "sample" in filename.lower():
+                    if extra_file_pattern.search(filename):
                         continue
 
                     filename_parsed = parse(filename)
@@ -130,7 +131,7 @@ class Premiumize:
 
                     filename = filenames[index]
 
-                    if "sample" in filename.lower():
+                    if extra_file_pattern.search(filename):
                         continue
 
                     files[hashes[index]] = {
@@ -263,7 +264,7 @@ class Premiumize:
         # Select correct file after downloading - Premiumize does not show files info pre download finished
         if not torrent_id:
             # Select right index
-            selected_id = await uncached_select_index(magnet_info["content"], index, is_uncached["name"], is_uncached["episode"], is_uncached["parsed_data"], "premiumize")
+            selected_id = await uncached_select_index(magnet_info["content"], index, is_uncached["name"], is_uncached["episode"], is_uncached["season"], is_uncached["parsed_data"], "premiumize")
             # Save torrentId (torrent id = index in links list)
             torrent_id = selected_id
             await update_torrent_id_uncached_db(debrid_key, hash, index, selected_id)

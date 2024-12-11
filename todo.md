@@ -159,6 +159,13 @@
 - Removed torrentio from normal indexers as it is only needed under Indexers Uncached (WebUI visual)
 - Fixed Premiumize wrong api endpoint
 
+### Update 6.5
+- Added and improved extras removal like samples, ncop, nced, making of
+  - Added extras removal / skip to uncached file selection
+  - Improved extras removal / skip for cached
+  - Fixes e.g. anime openings being selected as episode
+- Added Season check to uncached file selection
+
 ---
 ### List of new envs
 - DEBRID_TAKE_FIRST - Returns this amount of results straight from debrid then runs through title match check
@@ -202,4 +209,5 @@
 - Fix Premiumize file upload. Does not allow any file upload for some reason.
   - Premiumize magnet fetching slow, maybe fixable.
 - Maybe add separate sorting for uncached links.
+- Improve status update. Atm with debrid take first takes two steps until it is shown as cached.
 

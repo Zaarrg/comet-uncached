@@ -5,7 +5,8 @@ from RTN import parse
 from aiohttp import FormData
 
 from comet.utils.general import is_video, check_uncached, remove_file_extension, update_torrent_id_uncached_db, \
-    update_container_id_uncached_db, uncached_db_find_container_id, uncached_select_index, check_index
+    update_container_id_uncached_db, uncached_db_find_container_id, uncached_select_index, check_index, \
+    extra_file_pattern
 from comet.utils.logger import logger
 
 
@@ -117,7 +118,7 @@ class DebridLink:
                     if not is_video(filename):
                         continue
 
-                    if "sample" in filename.lower():
+                    if extra_file_pattern.search(filename):
                         continue
 
                     filename_parsed = parse(filename)
@@ -153,7 +154,7 @@ class DebridLink:
                     if not is_video(filename):
                         continue
 
-                    if "sample" in filename.lower():
+                    if extra_file_pattern.search(filename):
                         continue
 
                     files[value["hashString"]] = {
@@ -252,7 +253,7 @@ class DebridLink:
                 )
                 return None
             # Select the right file and get its index by matching titles
-            selected_index = await uncached_select_index(magnet_value["files"], index, is_uncached["name"], is_uncached["episode"], is_uncached["parsed_data"], "debridlink")
+            selected_index = await uncached_select_index(magnet_value["files"], index, is_uncached["name"], is_uncached["episode"], is_uncached["season"], is_uncached["parsed_data"], "debridlink")
             # Save torrentId
             torrent_id = selected_index
             await update_torrent_id_uncached_db(debrid_key, hash, index, selected_index)
