@@ -201,6 +201,7 @@
 - Set CACHE_WIPE = 0 to disable background cache clean up
 
 ### Still need to do:
+- Binge sometimes still not working uncached torbox
 - Maybe Add torbox usenet availability check (Not really needed and will add overhead but for better user experince)
 - Maybe add Easynews+ as provider as well.
 - Check jackett/prowlarr missing infohashes sometimes, probably rate limits?

@@ -771,25 +771,25 @@ async def uncached_select_index(
             "file_name_extractor": lambda file: file.get("name", ""),
             "filter": lambda files: files,  # No filtering for DL
             "id_getter": lambda file, i: i,
-            "fallback": lambda idx: int(idx),
+            "fallback": lambda idx: max(int(idx) - 1, 0),
         },
         "alldebrid": {
             "file_name_extractor": lambda file: file.get("filename", ""),
             "filter": lambda files: files,
             "id_getter": lambda file, i: i,
-            "fallback": lambda idx: int(idx),
+            "fallback": lambda idx: max(int(idx) - 1, 0),
         },
         "premiumize": {
             "file_name_extractor": lambda file: file.get("path", "").split("/")[-1],
             "filter": lambda files: files,
             "id_getter": lambda file, i: i,
-            "fallback": lambda idx: int(idx),
+            "fallback": lambda idx: max(int(idx) - 1, 0),
         },
         "torbox": {
-            "file_name_extractor": lambda file: file.get("name", ""),
+            "file_name_extractor": lambda file: file.get("short_name", ""),
             "filter": lambda files: files,
             "id_getter": lambda file, i: file.get("id"),
-            "fallback": lambda idx: int(idx),
+            "fallback": lambda idx: max(int(idx) - 1, 0),
         },
     }
 
@@ -1054,7 +1054,7 @@ async def add_uncached_files(
                 # Later on in debrid handle_uncached the real index is determiend based on title and file_name to return the correct download link
                 # The index used in the url only is a placeholder to make it unique to make sure the download link / uncached torrents cache can work
                 # Real index can only be determined later when the debrid files are known for that uncached torrent
-                file_index = episode - 1 if episode else 0
+                file_index = episode if episode else 0
                 stremio_data = {
                     "index": file_index,
                     "title": torrent["Title"],
