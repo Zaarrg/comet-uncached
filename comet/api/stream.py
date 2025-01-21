@@ -547,7 +547,8 @@ async def stream(
             if (
                     config["debridService"] == "debridlink" or
                     config["debridService"] == "realdebrid" or
-                    config["debridService"] == "alldebrid"
+                    config["debridService"] == "alldebrid" or
+                    config["debridService"] == "torbox"
             ):
                 tasks.append(debrid.get_first_files(settings.DEBRID_TAKE_FIRST))
 

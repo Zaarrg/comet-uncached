@@ -201,7 +201,7 @@
 - Set CACHE_WIPE = 0 to disable background cache clean up
 
 ### Still need to do:
-- Add uncached support + DEBRID_TAKE_FIRST for torbox when signup open again
+- Add torbox nzb support
 - Check jackett/prowlarr missing infohashes sometimes, probably rate limits?
   - Issue 5 might be related
 - Add Language Tags to prowlarr and jackett search

@@ -31,12 +31,12 @@
 ## 🌟 **State of Uncached Support**
 
 | Provider       | Status                                      | Notes                                           | Supports Catalog       |
-|----------------|---------------------------------------------|------------------------------------------------|-------------------------|
+|----------------|---------------------------------------------|------------------------------------------------|------------------------|
 | **Real Debrid** | ✅ Full Support                            | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   | ✅ *Allows catalog view*|
 | **All Debrid**  | ✅ Full Support                            | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   | ✅ *Allows catalog view*|
 | **Premiumize**  | ✅ Full Support                            | 🔄 *Seasons limit*                             | ❌                     |
 | **Debrid Link** | ✅ Full Support                            | ✨ **DEBRID_TAKE_FIRST**                        | ✅ *Allows catalog view*|
-| **Torbox**      | ❌ Unsupported                            | 🚧 *Will be added once sign-ups open*          | ❌                     |
+| **Torbox**      | ✅ Full Support                             | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   | ✅ *Allows catalog view*|
 
 ---
 

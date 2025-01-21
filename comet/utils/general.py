@@ -218,6 +218,17 @@ catalog_config = {
         "file_id_getter": lambda file, i: i,
         "file_name_getter": lambda file: file.get("filename"),
         "hash_getter": lambda torrent: torrent.get("data").get("magnets").get("hash"),
+    },
+    "torbox": {
+        "amount": 1000,
+        "preview_filter": lambda files: [file for file in files if file.get('Status') == "cached" or file.get('Status') == "uploading" or file.get('Status') == "completed"],
+        "meta_filter": lambda files: [file for file in files if is_video(file.get('name'))],
+        "files_getter": lambda torrent: torrent.get("data").get("files"),
+        "title_getter": lambda torrent: torrent.get("data").get("name"),
+        "torrent_id_getter": lambda torrent: str(torrent.get("data").get("id")),
+        "file_id_getter": lambda file, i: file.get("id"),
+        "file_name_getter": lambda file: file.get("name"),
+        "hash_getter": lambda torrent: torrent.get("data").get("hash"),
     }
 }
 
@@ -733,6 +744,12 @@ async def uncached_select_index(
             "file_name_extractor": lambda file: file.get("path", "").split("/")[-1],
             "filter": lambda files: files,
             "id_getter": lambda file, i: i,
+            "fallback": lambda idx: int(idx),
+        },
+        "torbox": {
+            "file_name_extractor": lambda file: file.get("name", ""),
+            "filter": lambda files: files,
+            "id_getter": lambda file, i: file.get("id"),
             "fallback": lambda idx: int(idx),
         },
     }
