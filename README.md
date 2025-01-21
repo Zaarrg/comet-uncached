@@ -20,6 +20,7 @@
 - 🎛️ **Customizable Results:** Customize how results are shown in Stremio (Result Order).
 - 🔒 **Config Encryption:** Secure your configuration via the `TOKEN` environment variable.
 - 🗂️ **Debrid Catalog:** View your recently uploaded files in Stremio as catalog
+- 📰 **Usenet Support**: Supports usenet caching by using usenet indexer from prowlarr and torbox.
 - 🌐 **Improved URL Handling:**
     - Shortened URLs with filenames included.
     - Use the `TOKEN` environment variable for even shorter playback URLs, improving player compatibility.
