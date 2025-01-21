@@ -30,6 +30,7 @@ class AppSettings(BaseSettings):
     INDEXER_MANAGER_API_KEY: Optional[str] = None
     INDEXER_MANAGER_TIMEOUT: Optional[int] = 30
     INDEXER_MANAGER_INDEXERS: List[str] = []
+    USENET_REFRESH_ATTEMPTS: Optional[int] = 10
     GET_TORRENT_TIMEOUT: Optional[int] = 5
     ZILEAN_URL: Optional[str] = None
     ZILEAN_TAKE_FIRST: Optional[int] = 500

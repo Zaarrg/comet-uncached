@@ -201,7 +201,8 @@
 - Set CACHE_WIPE = 0 to disable background cache clean up
 
 ### Still need to do:
-- Add torbox nzb support
+- Maybe Add torbox usenet availability check (Not really needed and will add overhead but for better user experince)
+- Maybe add Easynews+ as provider as well.
 - Check jackett/prowlarr missing infohashes sometimes, probably rate limits?
   - Issue 5 might be related
 - Add Language Tags to prowlarr and jackett search

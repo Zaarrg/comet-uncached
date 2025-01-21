@@ -391,11 +391,44 @@ def get_debrid_extension(debridService: str, debridApiKey: str = None):
     return debrid_extensions.get(debridService, None)
 
 
+def build_custom_filename(parsed_data: dict):
+    fields_order = [
+        "normalized_title",
+        "group",
+        "resolution",
+        "quality",
+        "languages",
+        "codec",
+        "audio",
+        "channels",
+        "network",
+        "hdr",
+        "audio",
+        "year"
+    ]
+    parts = []
+    for field in fields_order:
+        if field not in parsed_data:
+            continue
+        value = parsed_data[field]
+        if not value:
+            continue
+        if isinstance(value, list):
+            joined = ".".join(str(item) for item in value)
+            if joined:
+                parts.append(joined)
+        else:
+            parts.append(str(value))
+    filename = ".".join(parts)
+    return filename
+
+
 async def get_indexer_manager(
         session: aiohttp.ClientSession,
         indexer_manager_type: str,
         indexers: list,
         query: str,
+        config: dict,
 ):
     results = []
     try:
@@ -439,13 +472,16 @@ async def get_indexer_manager(
             indexers_id = []
             for indexer in get_indexers:
                 if (
-                        indexer["name"].lower() in indexers
-                        or indexer["definitionName"].lower() in indexers
+                    (indexer["protocol"] != "usenet" or config["debridService"] == "torbox")
+                    and (
+                    indexer["name"].lower() in indexers
+                    or indexer["definitionName"].lower() in indexers
+                    )
                 ):
                     indexers_id.append(indexer["id"])
 
             response = await session.get(
-                f"{settings.INDEXER_MANAGER_URL}/api/v1/search?query={query}&indexerIds={'&indexerIds='.join(str(indexer_id) for indexer_id in indexers_id)}&type=search",
+                f"{settings.INDEXER_MANAGER_URL}/api/v1/search?query={query}&indexerIds={'&indexerIds='.join(str(indexer_id) for indexer_id in indexers_id)}&type=search&limit=500000",
                 headers={"X-Api-Key": settings.INDEXER_MANAGER_API_KEY},
             )
             response = await response.json()
@@ -454,12 +490,15 @@ async def get_indexer_manager(
                 result["InfoHash"] = (
                     result["infoHash"] if "infoHash" in result else None
                 )
+                if result["protocol"] == "usenet" and result["InfoHash"] is None:
+                    result["InfoHash"] = hashlib.sha1(result["fileName"].encode('utf-8')).hexdigest()
                 result["Title"] = result["title"]
                 result["Size"] = result["size"]
                 result["Link"] = (
                     result["downloadUrl"] if "downloadUrl" in result else None
                 )
                 result["Tracker"] = result["indexer"]
+                result["Protocol"] = result["protocol"]
 
                 results.append(result)
     except Exception as e:
@@ -782,7 +821,7 @@ async def uncached_select_index(
 
     for i, file in enumerate(files):
         file_name = file_name_extractor(file)
-        if extra_file_pattern.search(file_name):
+        if extra_file_pattern.search(file_name) or not is_video(file_name):
             continue
         file_name_parsed = parse(file_name)
 
@@ -889,7 +928,7 @@ async def check_uncached(hash: str, file_index: str, debrid_key: str):
     # Fetch uncached torrent data from the database
     uncached_torrent = await database.fetch_one(
         """
-        SELECT torrent_id, container_id, link, magnet, data, name, episode, season
+        SELECT torrent_id, container_id, link, magnet, data, name, raw_title, episode, season, protocol
         FROM cache
         WHERE debrid_key = :debrid_key AND info_hash = :hash AND file_index = :file_index AND uncached = :uncached
         """,
@@ -902,12 +941,14 @@ async def check_uncached(hash: str, file_index: str, debrid_key: str):
 
         return {
             "name": uncached_torrent["name"],
+            "raw_title": uncached_torrent["raw_title"],
             "episode": uncached_torrent["episode"],
             "season": uncached_torrent["season"],
             "parsed_data": uncached_torrent["data"],
             "torrent_id": uncached_torrent["torrent_id"],
             "container_id": uncached_torrent["container_id"],
             "torrent_link": uncached_torrent["link"],
+            "protocol": uncached_torrent["protocol"],
             "has_magnet": has_magnet
         }
     else:
@@ -1484,6 +1525,7 @@ async def add_torrent_to_cache(
             "info_hash": sorted_ranked_files[torrent]["infohash"],
             "debrid_key": derive_debrid_key(config["debridApiKey"]) if sorted_ranked_files[torrent]["data"]["uncached"] else '',
             "name": name,
+            "raw_title": sorted_ranked_files[torrent]["raw_title"],
             "season": season,
             "episode": episode,
             "file_index": sorted_ranked_files[torrent]["data"]["index"],
@@ -1492,9 +1534,8 @@ async def add_torrent_to_cache(
             "uncached": sorted_ranked_files[torrent]["data"]["uncached"],
             "link": sorted_ranked_files[torrent]["data"]["link"],
             "magnet": sorted_ranked_files[torrent]["data"]["magnet"],
-            "tracker": sorted_ranked_files[torrent]["data"]["tracker"]
-            .split("|")[0]
-            .lower(),
+            "protocol": sorted_ranked_files[torrent]["data"]["protocol"],
+            "tracker": sorted_ranked_files[torrent]["data"]["tracker"].split("|")[0].lower(),
             "data": orjson.dumps(sorted_ranked_files[torrent]).decode("utf-8"),
             "timestamp": time.time(),
         }
@@ -1503,8 +1544,8 @@ async def add_torrent_to_cache(
 
     query = f"""
         INSERT {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}
-        INTO cache (debridService, info_hash, debrid_key, name, season, episode, file_index, torrent_id, container_id, uncached, link, magnet, tracker, data, timestamp)
-        VALUES (:debridService, :info_hash, :debrid_key, :name, :season, :episode, :file_index, :torrent_id, :container_id, :uncached, :link, :magnet, :tracker, :data, :timestamp)
+        INTO cache (debridService, info_hash, debrid_key, name, raw_title, season, episode, file_index, torrent_id, container_id, uncached, link, magnet, tracker, protocol, data, timestamp)
+        VALUES (:debridService, :info_hash, :debrid_key, :name, :raw_title, :season, :episode, :file_index, :torrent_id, :container_id, :uncached, :link, :magnet, :tracker, :protocol, :data, :timestamp)
         {' ON CONFLICT DO NOTHING' if settings.DATABASE_TYPE == 'postgresql' else ''}
     """
 

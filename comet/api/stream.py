@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import hashlib
 import time
 import uuid
 from urllib.parse import quote
@@ -36,7 +37,7 @@ from comet.utils.general import (
     format_title, add_uncached_files, get_localized_titles, get_language_codes, get_client_ip,
     language_to_country_code, check_completion, short_encrypt,
     add_torrent_to_cache, update_uncached_status, derive_debrid_key, search_imdb_id, is_video, clean_titles,
-    catalog_config
+    catalog_config, build_custom_filename
 )
 from comet.utils.logger import logger
 from comet.utils.models import database, rtn, settings, trackers
@@ -523,7 +524,7 @@ async def stream(
             search_terms = list(dict.fromkeys(term.replace('-', ' ').replace('_', ' ') for term in reversed(search_terms)))[::-1]
             tasks.extend(
                 get_indexer_manager(
-                    session, indexer_manager_type, config["indexers"], term
+                    session, indexer_manager_type, config["indexers"], term, config
                 )
                 for term in search_terms
             )
@@ -695,6 +696,7 @@ async def stream(
             sorted_ranked_files[hash]["data"]["title"] = files[hash]["title"]
             sorted_ranked_files[hash]["data"]["torrent_title"] = torrents_by_hash[hash]["Title"]
             sorted_ranked_files[hash]["data"]["tracker"] = torrents_by_hash[hash]["Tracker"]
+            sorted_ranked_files[hash]["data"]["protocol"] = torrents_by_hash[hash].get("Protocol", "torrent")
             sorted_ranked_files[hash]["data"]["size"] = files[hash]["size"]
             sorted_ranked_files[hash]["data"]["uncached"] = files[hash]["uncached"]
             if files[hash].get("complete") is None:
@@ -754,6 +756,8 @@ async def stream(
         for resolution in balanced_hashes:
             for hash in balanced_hashes[resolution]:
                 data = sorted_ranked_files[hash]["data"]
+                binge_filename = build_custom_filename(data)
+                binge_hash = hashlib.sha1(binge_filename.encode('utf-8')).hexdigest()
                 url_friendly_file = quote(data["raw_title"].replace('/', '-'), safe='')
                 results.append(
                     {
@@ -764,7 +768,7 @@ async def stream(
                         "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{short_config}/playback/{hash}/{data['index']}/{url_friendly_file}",
                         "behaviorHints": {
                             "filename": data["raw_title"],
-                            "bingeGroup": "comet|" + hash,
+                            "bingeGroup": "comet|" + binge_hash,
                         },
                     }
                 )

@@ -1,3 +1,4 @@
+import time
 from typing import Optional
 
 import aiohttp
@@ -8,6 +9,7 @@ from RTN import parse
 from comet.utils.general import is_video, check_completion, extra_file_pattern, check_uncached, check_index, \
     uncached_db_find_container_id, update_container_id_uncached_db, update_torrent_id_uncached_db, uncached_select_index
 from comet.utils.logger import logger
+from comet.utils.models import settings
 
 
 class TorBox:
@@ -168,7 +170,7 @@ class TorBox:
             raise Exception(f"Failed to get magnet ID from Torbox: {add_magnet}")
         return torrent_id
 
-    async def add_file(self, torrent_link: str):
+    async def add_file(self, torrent_link: str, protocol: str, name: str):
         # Download uncached torrent if it has only a link
         async with self.session.get(torrent_link) as resp:
             if resp.status != 200:
@@ -177,20 +179,28 @@ class TorBox:
 
         # Prepare the form data
         form = aiohttp.FormData()
-        form.add_field(
-            'file',
-            torrent_data,
-            filename="torrent_file.torrent",
-            content_type='application/x-bittorrent'
-        )
+        if protocol == "torrent":
+            form.add_field(
+                'file',
+                torrent_data,
+                filename=f"{name}.torrent",
+                content_type='application/x-bittorrent'
+            )
+        elif protocol == "usenet":
+            form.add_field(
+                'file',
+                torrent_data,
+                filename=f"{name}.nzb",
+                content_type='application/x-nzb'
+            )
 
         add_torrent = await self.session.post(
-            f"{self.api_url}/torrents/createtorrent",
+            f"{self.api_url}/torrents/createtorrent" if protocol != "usenet" else f"{self.api_url}/usenet/createusenetdownload",
             data=form,
         )
 
         add_torrent = await add_torrent.json()
-        torrent_id = add_torrent["data"]["torrent_id"]
+        torrent_id = add_torrent["data"]["torrent_id"] if protocol != "usenet" else add_torrent["data"]["usenetdownload_id"]
         if not torrent_id:
             raise Exception(f"Failed to get torrent ID from Torbox: {add_torrent}")
         logger.info(
@@ -198,10 +208,10 @@ class TorBox:
         )
         return torrent_id
 
-    async def get_info(self, torrent_id: Optional[str] = None, hash: Optional[str] = None):
+    async def get_info(self, torrent_id: Optional[str] = None, hash: Optional[str] = None, protocol: Optional[str] = None):
         try:
             get_torrents = await self.session.get(
-                f"{self.api_url}/torrents/mylist?bypass_cache=true{'&id=' + str(torrent_id) if torrent_id else ''}"
+                f"{self.api_url}/{'torrents' if protocol == 'torrent' else 'usenet'}/mylist?bypass_cache=true{'&id=' + str(torrent_id) if torrent_id else ''}"
             )
         except Exception as e:
             logger.warning(
@@ -219,9 +229,9 @@ class TorBox:
                     break
             return torrent_data
 
-    async def get_download_link(self, index: int, torrent_id: str):
+    async def get_download_link(self, index: int, torrent_id: str, protocol: str):
         get_download_link = await self.session.get(
-            f"{self.api_url}/torrents/requestdl?token={self.debrid_api_key}&torrent_id={torrent_id}&file_id={index}&zip=false",
+            f"{self.api_url}/{'torrents' if protocol == 'torrent' else 'usenet'}/requestdl?token={self.debrid_api_key}&{'torrent_id' if protocol == 'torrent' else 'usenet_id'}={torrent_id}&file_id={index}&zip=false",
         )
         get_download_link = await get_download_link.json()
 
@@ -231,6 +241,8 @@ class TorBox:
         container_id = is_uncached.get('container_id', None)
         torrent_id = is_uncached.get('torrent_id', None)
         has_magnet = is_uncached.get('has_magnet', None)
+        protocol = is_uncached.get('protocol')
+        name = is_uncached.get('raw_title')
 
         if not container_id:
             possible_container_id = await uncached_db_find_container_id(debrid_key, hash)
@@ -238,14 +250,14 @@ class TorBox:
                 torrent_link = is_uncached.get('torrent_link')
                 container_id = await (
                     self.add_magnet(hash) if has_magnet or not torrent_link
-                    else self.add_file(torrent_link)
+                    else self.add_file(torrent_link, protocol, name)
                 )
             else:
                 container_id = possible_container_id
             await update_container_id_uncached_db(debrid_key, hash, container_id)
-        magnet_info = await self.get_info(container_id, None)
+        magnet_info = await self.get_info(container_id, None, protocol)
         # Reset ContainerId if not found, might happen if user removes it in debridManager Code >= 5 Error
-        if not magnet_info or magnet_info['data'].get("download_state") == "error" or magnet_info['data'].get("download_state") == "missingFiles" or magnet_info['data'].get("download_state") == "unknown":
+        if not magnet_info or magnet_info['data'].get("download_state") == "error" or magnet_info['data'].get("download_state") == "missingFiles" or magnet_info['data'].get("download_state") == "unknown" or "failed" in magnet_info['data'].get("download_state"):
             logger.warning(
                 f"Exception while getting file from Torbox, please retry, for {hash}|{index}: {magnet_info}"
             )
@@ -254,12 +266,45 @@ class TorBox:
             return None
 
         magnet_info = magnet_info['data']
-        # Return early if downloading - Download is ready if files is not none, but we check status anyway
-        if not magnet_info.get("download_finished") or magnet_info.get("files") is None:
-            logger.info(
-                f"File {hash}|{index} is still uncached, please wait until its cached! Status: {magnet_info.get('download_state')} | Progress: {magnet_info.get('progress')}%"
-            )
-            return None
+
+        if protocol == "usenet":
+            max_attempts = settings.USENET_REFRESH_ATTEMPTS
+
+            for attempt in range(max_attempts):
+                download_finished = magnet_info.get("download_finished")
+                files = magnet_info.get("files") or []
+
+                if download_finished and len(files) > 0:
+                    break
+
+                logger.info(
+                    f"File {hash}|{index} is still uncached, please wait."
+                    f" Status: {magnet_info.get('download_state')} |"
+                    f" Progress: {int(magnet_info.get('progress') * 100)}%. Attempt {attempt+1}/{max_attempts}"
+                )
+
+                time.sleep(4)
+
+                magnet_info_result = await self.get_info(container_id, None, protocol)
+                if not magnet_info_result:
+                    logger.warning(
+                        f"Exception while getting file from Torbox, please retry, for {hash}|{index}"
+                    )
+                    return None
+                magnet_info = magnet_info_result['data']
+            else:
+                logger.warning(
+                    f"Download was not finished after {max_attempts} attempts for {hash}|{index}"
+                )
+                return None
+        else:
+            if not magnet_info.get("download_finished") or not magnet_info.get("files"):
+                logger.info(
+                    f"File {hash}|{index} is still uncached, please wait."
+                    f" Status: {magnet_info.get('download_state')} |"
+                    f" Progress: {int(magnet_info.get('progress') * 100)}%"
+                )
+                return None
         # Select correct file after downloading - Torbox does not show files info pre download finished
         if not torrent_id:
             # Select right index by matching titles
@@ -268,13 +313,13 @@ class TorBox:
             torrent_id = selected_id
             await update_torrent_id_uncached_db(debrid_key, hash, index, selected_id)
 
-        return await self.get_download_link(torrent_id, container_id)
+        return await self.get_download_link(torrent_id, container_id, protocol)
 
     async def handle_cached(self, hash: str, index: str):
-        torrent_data = await self.get_info(None, hash)
+        torrent_data = await self.get_info(None, hash, "torrent")
         if not torrent_data:
             torrent_data = {'id': await self.add_magnet(hash)}
-        return await self.get_download_link(index, torrent_data['id'])
+        return await self.get_download_link(index, torrent_data['id'], "torrent")
 
     async def generate_download_link(self, hash: str, index: str, debrid_key: str):
         try:

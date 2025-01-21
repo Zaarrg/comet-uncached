@@ -17,6 +17,7 @@
 ## 🌟 **Fork Features**
 - 🔍 **Advanced Language Search:** Search in multiple languages.
 - 🔧 **Advanced Sorting and Preferences:** Sort by language, rank, seeders, size, or completion.
+- 🚀 **Advanced Binge Watching:** Advanced recognition of binge groups, allows for even single usenet files to be binged.
 - 🎛️ **Customizable Results:** Customize how results are shown in Stremio (Result Order).
 - 🔒 **Config Encryption:** Secure your configuration via the `TOKEN` environment variable.
 - 🗂️ **Debrid Catalog:** View your recently uploaded files in Stremio as catalog
@@ -30,13 +31,13 @@
 
 ## 🌟 **State of Uncached Support**
 
-| Provider       | Status                                      | Notes                                           | Supports Catalog       |
-|----------------|---------------------------------------------|------------------------------------------------|------------------------|
-| **Real Debrid** | ✅ Full Support                            | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   | ✅ *Allows catalog view*|
-| **All Debrid**  | ✅ Full Support                            | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   | ✅ *Allows catalog view*|
-| **Premiumize**  | ✅ Full Support                            | 🔄 *Seasons limit*                             | ❌                     |
-| **Debrid Link** | ✅ Full Support                            | ✨ **DEBRID_TAKE_FIRST**                        | ✅ *Allows catalog view*|
-| **Torbox**      | ✅ Full Support                             | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   | ✅ *Allows catalog view*|
+| Provider       | Status                               | Notes                                           | Supports Catalog       |
+|----------------|--------------------------------------|------------------------------------------------|------------------------|
+| **Real Debrid** | ✅ Full Support                       | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   | ✅ *Allows catalog view*|
+| **All Debrid**  | ✅ Full Support                       | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   | ✅ *Allows catalog view*|
+| **Premiumize**  | ✅ Full Support                       | 🔄 *Seasons limit*                             | ❌                     |
+| **Debrid Link** | ✅ Full Support                       | ✨ **DEBRID_TAKE_FIRST**                        | ✅ *Allows catalog view*|
+| **Torbox**      | ✅ Full Support   + 📰 Usenet Support | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   | ✅ *Allows catalog view*|
 
 ---
 
@@ -48,6 +49,7 @@
 - ✨ **DEBRID_TAKE_FIRST**: Supports the environment variable to explicitly return the first e.g., 100 files from the provider, useful for private torrents uploaded via DebridMediaManager or the provider's UI.
 - 🚧 **Work in Progress**: Feature planned but not yet available.
 - ✅ **Supports Catalog**: Allows viewing and playing recently uploaded debrid files in Stremio under e.g. **Discover -> Others -> Comet RealDebrid**.
+- 📰 **Usenet Support**: Supports usenet caching by using usenet indexer from prowlarr.
 - ❌ **Does Not Support Catalog**: The provider does not have catalog integration in Stremio.
 
 
@@ -69,6 +71,22 @@
 - If you prefer uncached torrents to be sorted and treated like normal torrents:
     1. Deselect **Uncached** under the **Resolutions** section on the Configuration Page.
     2. This allows for sorting by resolution to function normally.
+
+### 📰 **Usenet Support**:
+- Only **Torbox** + **Prowlarr** Supports watching usenet files.
+- This is in many aspects better then torrents as its not limited to **seeders** and **peers** meaning every file can be nearly always cached.
+- Example usenet setup using **torbox** + **prowlarr**
+  1. Add a usenet indexer to **Prowlarr** like **scenenzbs**
+  2. Add the created **Indexer Name** to the **INDEXER_MANAGER_INDEXERS** environment variable
+  3. Visit the Web Ui and selected the added indexers under **Indexers** and **Indexers Uncached**
+  4. Optionally adjust the **USENET_REFRESH_ATTEMPTS** env. By default this is 10 and seems to be more then enough for the **Torbox pro plan** download speed.
+  5. 🎉 Done! Comet will now show the usenet results of **Prowlarr** and use **Torbox** to cache and stream.
+
+> 💡 **Note:** This setup allows for even Uncached files to seem cached. Because the usenet files are not speed restricted by seeders or peers, it allows in combination 
+> with Torbox Pro 80 Gbps download speed to add single Episodes with a size of e.g. 2 GB, which are then instantly downloaded. The USENET_REFRESH_ATTEMPTS parameter checks every 4 seconds—up 
+> to 4 times—whether the file is ready for streaming; if the file is ready before the last attempt, Stremio begins playback immediately.
+> Meaning in Stremio only a longer loading screen is experienced then usual. This, in combination with the **Advanced Binge Watching** which allows for Single files to be binged watched 
+> and not like usually with torrents which require the whole torrent to be one Season, guarantees a smooth watching experience. Of course this can as well fail if file names are inconsistent across episodes or the usenet file is broken and cant be repaired.
 
 ### 🌍 **Language Support**
 - **Default Behavior:** Comet compares torrent titles to all languages by default.

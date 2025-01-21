@@ -155,7 +155,7 @@ class Premiumize:
         )
         return await add_magnet.json()
 
-    async def add_file(self, torrent_link: str):
+    async def add_file(self, torrent_link: str, name: str):
         # Download uncached torrent if it has only a link
         async with self.session.get(torrent_link) as resp:
             if resp.status != 200:
@@ -167,7 +167,7 @@ class Premiumize:
         form.add_field(
             'file',  # Field name as per your browser's observation
             torrent_data,
-            filename='torrent_file.torrent',
+            filename=f'{name}.torrent',
             content_type='application/x-bittorrent'
         )
 
@@ -225,6 +225,7 @@ class Premiumize:
         container_id = is_uncached.get('container_id', None)
         torrent_id = is_uncached.get('torrent_id', None)
         has_magnet = is_uncached.get('has_magnet', None)
+        name = is_uncached.get('raw_title')
 
         if not container_id:
             possible_container_id = await uncached_db_find_container_id(debrid_key, hash)
@@ -232,7 +233,7 @@ class Premiumize:
                 torrent_link = is_uncached.get('torrent_link')
                 container = await (
                     self.add_magnet_uncached(hash) if has_magnet or not torrent_link
-                    else self.add_file(torrent_link)
+                    else self.add_file(torrent_link, name)
                 )
                 if not container:
                     return None

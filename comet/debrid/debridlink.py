@@ -172,7 +172,7 @@ class DebridLink:
         )
         return await add_torrent.json()
 
-    async def add_file(self, torrent_link: str):
+    async def add_file(self, torrent_link: str, name: str):
         # Download the torrent file
         async with self.session.get(torrent_link) as resp:
             if resp.status != 200:
@@ -184,7 +184,7 @@ class DebridLink:
         data.add_field(
             'file',
             torrent_data,
-            filename='torrent.torrent',
+            filename=f'{name}.torrent',
             content_type='application/x-bittorrent'
         )
         data.add_field('async', 'true')
@@ -209,6 +209,7 @@ class DebridLink:
         container_id = is_uncached.get('container_id', None)
         torrent_id = is_uncached.get('torrent_id', None)
         has_magnet = is_uncached.get('has_magnet', None)
+        name = is_uncached.get('raw_title')
 
         if not container_id:
             possible_container_id = await uncached_db_find_container_id(debrid_key, hash)
@@ -216,7 +217,7 @@ class DebridLink:
                 torrent_link = is_uncached.get('torrent_link')
                 container = await (
                     self.add_magnet(hash) if has_magnet or not torrent_link
-                    else self.add_file(torrent_link)
+                    else self.add_file(torrent_link, name)
                 )
                 if container.get("value", None) is None:
                     raise Exception(f"Failed to upload torrent to Debrid-Link: {hash} | {container}")
