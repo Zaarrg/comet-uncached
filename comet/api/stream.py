@@ -3,7 +3,8 @@ import datetime
 import hashlib
 import time
 import uuid
-from urllib.parse import quote
+from collections import defaultdict
+from urllib.parse import quote, unquote
 
 import PTT
 import aiohttp
@@ -37,7 +38,7 @@ from comet.utils.general import (
     format_title, add_uncached_files, get_localized_titles, get_language_codes, get_client_ip,
     language_to_country_code, check_completion, short_encrypt,
     add_torrent_to_cache, update_uncached_status, derive_debrid_key, search_imdb_id, is_video, clean_titles,
-    catalog_config, build_custom_filename
+    catalog_config, build_custom_filename, generate_unified_streams, cache_download_link, debrid_services
 )
 from comet.utils.logger import logger
 from comet.utils.models import database, rtn, settings, trackers
@@ -98,19 +99,78 @@ async def stream(
         debrid_config = catalog_config[config["debridService"]]
         debrid_filter = debrid_config["preview_filter"]
 
-        files = await debrid.get_first_files(debrid_config["amount"])
-
+        files = await debrid.get_first_files(debrid_config["amount"]) if config["debridService"] != "torbox" else await debrid.get_first_files(debrid_config["amount"], "all")
         filter_files = debrid_filter(files)
 
-        metas_list = []
-        for file in filter_files:
-            metas_list.append({
-                "id": f"comet-{config['debridService']}-{file['Id']}",
-                "type": "other",
-                "name": file["Title"],
-            })
+        # Group files by cleaned title with error handling
+        title_groups = {}
+
+        for idx, file in enumerate(filter_files):
+            try:
+                file["Title"] = unquote(file["Title"])
+                parsed = parse(file["Title"])
+                clean_title = clean_titles(parsed.parsed_title)
+            except Exception as e:
+                clean_title = f"error_{idx}"  # Unique key for failed parses
+
+            if clean_title not in title_groups:
+                title_groups[clean_title] = {
+                    'files': [],
+                    'original_indexes': []
+                }
+            title_groups[clean_title]['files'].append(file)
+            title_groups[clean_title]['original_indexes'].append(idx)
+
+        # Batch fetch unique valid titles
+        max_concurrent = 30
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def fetch_imdb(clean_title):
+            if clean_title.startswith("error_"):
+                return None  # Skip failed parses
+            async with semaphore:
+                try:
+                    return await search_imdb_id(clean_title, session)
+                except Exception as e:
+                    return None
+
+        unique_titles = [t for t in title_groups.keys() if not t.startswith("error_")]
+        imdb_results = await asyncio.gather(*[fetch_imdb(t) for t in unique_titles])
+        title_to_imdb = dict(zip(unique_titles, imdb_results))
+
+        # Build results with all original files
+        metas_list = [None] * len(filter_files)
+
+        for clean_title, group_data in title_groups.items():
+            # Get IMDb data for valid titles
+            imdb_data = title_to_imdb.get(clean_title) if not clean_title.startswith("error_") else None
+
+            # Create metadata template
+            meta_template = {}
+            if imdb_data:
+                meta_template = {
+                    "description": imdb_data.get("description"),
+                    "genres": imdb_data.get("genres"),
+                    "poster": f"https://images.metahub.space/poster/medium/{imdb_data['id']}/img",
+                    "background": f"https://images.metahub.space/background/medium/{imdb_data['id']}/img",
+                    "logo": f"https://images.metahub.space/logo/medium/{imdb_data['id']}/img",
+                    "imdbRating": imdb_data.get("imdbRating"),
+                    "releaseInfo": f"{imdb_data.get('startYear', '')}-{imdb_data.get('endYear', '')}",
+                }
+                # Remove empty fields
+                meta_template = {k: v for k, v in meta_template.items() if v not in (None, "")}
+
+            # Apply to all files in group
+            for file, orig_idx in zip(group_data['files'], group_data['original_indexes']):
+                metas_list[orig_idx] = {
+                    "id": f"comet-{config['debridService']}-{file['Id']}",
+                    "type": "other",
+                    "name": file["Title"],
+                    **meta_template  # Only adds populated fields
+                }
+
         return {
-            "metas": metas_list,
+            "metas": [m for m in metas_list if m is not None],  # Just in case
             "cacheMaxAge": 0
         }
 
@@ -141,7 +201,13 @@ async def stream(
     ) as session:
         debrid = getDebrid(session, config, get_client_ip(request))
         debrid_id = id.split("-")[-1]
-        torrent = await debrid.get_info(debrid_id)
+
+        if config.get("debridService") == "torbox":
+            torrent = await debrid.get_info(debrid_id, "torrent")
+            if not torrent:
+                torrent = await debrid.get_info(debrid_id, "usenet")
+        else:
+            torrent = await debrid.get_info(debrid_id)
 
         debrid_config = catalog_config[config["debridService"]]
         debrid_meta_filter = debrid_config["meta_filter"]
@@ -157,6 +223,7 @@ async def stream(
         files = debrid_meta_filter(files)
 
         filename = debrid_title_getter(torrent)
+        filename = unquote(filename)
         torrent_id = debrid_torrent_id_getter(torrent)
         info_hash = debrid_hash_getter(torrent)
         parsed_data = parse(filename)
@@ -176,19 +243,21 @@ async def stream(
         for i, file in enumerate(files):
             file_id = debrid_file_id_getter(file, i)
             file_name = debrid_file_name_getter(file)
+            file_name = unquote(file_name)
 
             url_friendly_file = quote(file_name.replace('/', '-'), safe='')
             parsed_data = parse(file_name)
-
+            binge_filename = build_custom_filename(vars(parsed_data))
+            binge_hash = hashlib.sha1(binge_filename.encode('utf-8')).hexdigest()
             video_data = {
                 "id": f"comet-{config['debridService']}-{file_id}",
                 "title": file_name,
                 "streams": [
                     {
-                        "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{short_config}/playback/{info_hash}/{file_id}/{url_friendly_file}",
+                        "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{short_config}/playback/{info_hash}-{torrent_id}/{file_id}/{url_friendly_file}",
                         "behaviorHints": {
                             "filename": file_name,
-                            "bingeGroup": "comet|" + torrent_id,
+                            "bingeGroup": "comet|" + binge_hash,
                         },
                     }
                 ],
@@ -409,6 +478,8 @@ async def stream(
                 },
             )
 
+
+
             for result in cached_results:
                 trackers_found.add(result["tracker"].lower())
 
@@ -425,43 +496,18 @@ async def stream(
 
             balanced_hashes = get_balanced_hashes(all_sorted_ranked_files, config, type)
 
-            for resolution in balanced_hashes:
-                for hash in balanced_hashes[resolution]:
-                    data = all_sorted_ranked_files[hash]["data"]
-                    the_stream = {
-                        "name": f"[{debrid_extension}{debrid_emoji}] Comet {data['resolution']}",
-                        "description": format_title(data, config),
-                        "torrentTitle": (
-                            data["torrent_title"] if "torrent_title" in data else None
-                        ),
-                        "torrentSize": (
-                            data["torrent_size"] if "torrent_size" in data else None
-                        ),
-                        "behaviorHints": {
-                            "filename": data["raw_title"],
-                            "bingeGroup": "comet|" + hash,
-                        },
-                    }
-
-                    if config["debridApiKey"] != "":
-                        url_friendly_file = quote(data["raw_title"].replace('/', '-'), safe='')
-                        short_config = b64config
-                        if settings.TOKEN:
-                            short_config = {
-                                "debridApiKey": config["debridApiKey"],
-                                "debridStreamProxyPassword": config["debridStreamProxyPassword"],
-                                "debridService": config["debridService"]
-                            }
-                            short_config = short_encrypt(orjson.dumps(short_config).decode("utf-8"), settings.TOKEN)
-                        the_stream["url"] = f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{short_config}/playback/{hash}/{data['index']}/{url_friendly_file}"
-                    else:
-                        the_stream["infoHash"] = hash
-                        index = data["index"]
-                        the_stream["fileIdx"] = (
-                            1 if "|" in index else int(index)
-                        )  # 1 because for Premiumize it's impossible to get the file index
-                        the_stream["sources"] = trackers
-                    results.append(the_stream)
+            results = generate_unified_streams(
+                request=request,
+                config=config,
+                b64config=b64config,
+                binge_preference=settings.BINGE_PREFERENCE,
+                sorted_files=all_sorted_ranked_files,
+                balanced_hashes=balanced_hashes,
+                debrid_extension=debrid_extension,
+                trackers=trackers,
+                is_cached=True,
+                debrid_emoji=debrid_emoji
+            )
 
             logger.info(
                 f"{len(all_sorted_ranked_files)} cached results found for {log_name}"
@@ -542,24 +588,46 @@ async def stream(
 
         if settings.SCRAPE_TORRENTIO and 't' in config["scrapingPreference"]:
             tasks.append(get_torrentio(log_name, type, full_id))
-
-
+        # Services Supported by get_first_files has to match "tracker" returned by get_first_files and config["debridService"]
         if settings.DEBRID_TAKE_FIRST > 0:
-            if (
-                    config["debridService"] == "debridlink" or
-                    config["debridService"] == "realdebrid" or
-                    config["debridService"] == "alldebrid" or
-                    config["debridService"] == "torbox"
-            ):
+            if config["debridService"] in debrid_services:
                 tasks.append(debrid.get_first_files(settings.DEBRID_TAKE_FIRST))
 
         if settings.SCRAPE_MEDIAFUSION:
             tasks.append(get_mediafusion(log_name, type, full_id))
 
         search_response = await asyncio.gather(*tasks)
+        # Split the search_response into debrid and non-debrid entries
+        debrid_entries = []
+        non_debrid_entries = []
         for results in search_response:
-            for result in results:
-                torrents.append(result)
+            for entry in results:
+                if entry.get("Tracker") in debrid_services:
+                    debrid_entries.append(entry)
+                else:
+                    non_debrid_entries.append(entry)
+
+        # Process non-debrid entries first and track their InfoHashes
+        hash_to_indices = defaultdict(list)
+        torrents = []
+
+        for idx, entry in enumerate(non_debrid_entries):
+            torrents.append(entry)
+            info_hash = entry["InfoHash"]
+            hash_to_indices[info_hash].append(idx)
+
+        # Process debrid entries to update existing trackers or add new entries
+        for entry in debrid_entries:
+            info_hash = entry["InfoHash"]
+            if info_hash in hash_to_indices:
+                # Update all non-debrid entries with the same hash
+                for idx in hash_to_indices[info_hash]:
+                    torrents[idx]["Tracker"] = entry["Tracker"]
+            else:
+                # Add the debrid entry if no existing entry
+                torrents.append(entry)
+                # Update the hash_to_indices to track the new entry
+                hash_to_indices[info_hash].append(len(torrents) - 1)
 
         logger.info(
             f"{len(torrents)} unique torrents found for {log_name}"
@@ -718,12 +786,6 @@ async def stream(
             )
             sorted_ranked_files[hash]["data"]["index"] = files[hash]["index"]
 
-        background_tasks.add_task(
-            add_torrent_to_cache, config, name, season, episode, sorted_ranked_files
-        )
-
-        logger.info(f"Results have been cached for {log_name}")
-
         debrid_extension = get_debrid_extension(config["debridService"])
 
         balanced_hashes = get_balanced_hashes(sorted_ranked_files, config, type)
@@ -743,35 +805,21 @@ async def stream(
                 }
             )
 
-        # Shorten Config for playback url
-        short_config = b64config
-        if settings.TOKEN:
-            short_config = {
-                "debridApiKey": config["debridApiKey"],
-                "debridStreamProxyPassword": config["debridStreamProxyPassword"],
-                "debridService": config["debridService"]
-            }
-            short_config = short_encrypt(orjson.dumps(short_config).decode("utf-8"), settings.TOKEN)
-        results = []
-        for resolution in balanced_hashes:
-            for hash in balanced_hashes[resolution]:
-                data = sorted_ranked_files[hash]["data"]
-                binge_filename = build_custom_filename(data)
-                binge_hash = hashlib.sha1(binge_filename.encode('utf-8')).hexdigest()
-                url_friendly_file = quote(data["raw_title"].replace('/', '-'), safe='')
-                results.append(
-                    {
-                        "name": f"[{debrid_extension}⚡] Comet {data['resolution']}",
-                        "description": format_title(data, config),
-                        "torrentTitle": data["torrent_title"],
-                        "torrentSize": data["torrent_size"],
-                        "url": f"{request.url.scheme}://{request.url.netloc}{f'{settings.URL_PREFIX}' if settings.URL_PREFIX else ''}/{short_config}/playback/{hash}/{data['index']}/{url_friendly_file}",
-                        "behaviorHints": {
-                            "filename": data["raw_title"],
-                            "bingeGroup": "comet|" + binge_hash,
-                        },
-                    }
-                )
+        results = generate_unified_streams(
+            request=request,
+            config=config,
+            b64config=b64config,
+            binge_preference=settings.BINGE_PREFERENCE,
+            sorted_files=sorted_ranked_files,
+            balanced_hashes=balanced_hashes,
+            debrid_extension=debrid_extension,
+        )
+
+        background_tasks.add_task(
+            add_torrent_to_cache, config, name, season, episode, sorted_ranked_files, balanced_hashes
+        )
+
+        logger.info(f"Results have been cached for {log_name}")
 
         return {"streams": results}
 
@@ -809,6 +857,10 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
     index = index.split('.', 1)[0]
     if not config:
         return FileResponse("comet/assets/invalidconfig.mp4")
+
+    hash_parts = hash.split('-', 1)
+    hash = hash_parts[0]
+    usenet_id = hash_parts[1] if len(hash_parts) > 1 else None
 
     if (
         settings.PROXY_DEBRID_STREAM
@@ -853,7 +905,10 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
                 else "",
             )
             derived_key = derive_debrid_key(config["debridApiKey"])
-            download_link = await debrid.generate_download_link(hash, index, derived_key)
+            if config.get("debridService") == "torbox":
+                download_link = await debrid.generate_download_link(hash, index, derived_key, usenet_id)
+            else:
+                download_link = await debrid.generate_download_link(hash, index, derived_key)
 
             if not download_link:
                 return FileResponse("comet/assets/uncached.mp4")
@@ -861,16 +916,7 @@ async def playback(request: Request, b64config: str, hash: str, index: str):
             await update_uncached_status(False, hash, index, config["debridService"], derived_key)
 
             # Cache the new download link
-            await database.execute(
-                f"INSERT {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}INTO download_links (debrid_key, hash, file_index, link, timestamp) VALUES (:debrid_key, :hash, :file_index, :link, :timestamp){' ON CONFLICT DO NOTHING' if settings.DATABASE_TYPE == 'postgresql' else ''}",
-                {
-                    "debrid_key": config["debridApiKey"],
-                    "hash": hash,
-                    "file_index": index,
-                    "link": download_link,
-                    "timestamp": current_time,
-                },
-            )
+            await cache_download_link(config["debridApiKey"], hash, index, download_link)
 
         if (
             settings.PROXY_DEBRID_STREAM

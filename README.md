@@ -21,6 +21,7 @@
 - 🔒 **Config Encryption:** Secure your configuration via the `TOKEN` environment variable.
 - 🗂️ **Debrid Catalog:** View your recently uploaded files in Stremio as catalog
 - 📰 **Usenet Support**: Supports usenet caching by using usenet indexer from prowlarr and torbox.
+- ⬇️ **Auto Cache Next**: Automatically starts caching next episode.
 - 🌐 **Improved URL Handling:**
     - Shortened URLs with filenames included.
     - Use the `TOKEN` environment variable for even shorter playback URLs, improving player compatibility.
@@ -31,13 +32,13 @@
 
 ## 🌟 **State of Uncached Support**
 
-| Provider       | Status                               | Notes                                           | Supports Catalog       |
-|----------------|--------------------------------------|------------------------------------------------|------------------------|
-| **Real Debrid** | ✅ Full Support                       | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   | ✅ *Allows catalog view*|
-| **All Debrid**  | ✅ Full Support                       | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   | ✅ *Allows catalog view*|
-| **Premiumize**  | ✅ Full Support                       | 🔄 *Seasons limit*                             | ❌                     |
-| **Debrid Link** | ✅ Full Support                       | ✨ **DEBRID_TAKE_FIRST**                        | ✅ *Allows catalog view*|
-| **Torbox**      | ✅ Full Support   + 📰 Usenet Support | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**   | ✅ *Allows catalog view*|
+| Provider       | Status                               | Notes                                             | Supports Catalog       |
+|----------------|--------------------------------------|---------------------------------------------------|------------------------|
+| **Real Debrid** | ✅ Full Support                       | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**      | ✅ *Allows catalog view*|
+| **All Debrid**  | ✅ Full Support                       | 🔄 *Seasons limit* + ✨ **DEBRID_TAKE_FIRST**      | ✅ *Allows catalog view*|
+| **Premiumize**  | ✅ Full Support                       | 🔄 *Seasons limit*                                | ❌                     |
+| **Debrid Link** | ✅ Full Support                       | ✨ **DEBRID_TAKE_FIRST**                           | ✅ *Allows catalog view*|
+| **Torbox**      | ✅ Full Support   + 📰 Usenet Support | 🔄 *Seasons limit* + ⬇️ *Auto Cache Next* + ✨ **DEBRID_TAKE_FIRST** + | ✅ *Allows catalog view*|
 
 ---
 
@@ -50,6 +51,7 @@
 - 🚧 **Work in Progress**: Feature planned but not yet available.
 - ✅ **Supports Catalog**: Allows viewing and playing recently uploaded debrid files in Stremio under e.g. **Discover -> Others -> Comet RealDebrid**.
 - 📰 **Usenet Support**: Supports usenet caching by using usenet indexer from prowlarr.
+- ⬇️ **Auto Cache Next**: Supports auto caching next episode.
 - ❌ **Does Not Support Catalog**: The provider does not have catalog integration in Stremio.
 
 
@@ -78,13 +80,13 @@
 - Example usenet setup using **torbox** + **prowlarr**
   1. Add a usenet indexer to **Prowlarr** like **scenenzbs**
   2. Add the created **Indexer Name** to the **INDEXER_MANAGER_INDEXERS** environment variable
-  3. Visit the Web Ui and selected the added indexers under **Indexers** and **Indexers Uncached**
+  3. Visit the Web Ui and select the added indexers under **Indexers** and **Indexers Uncached**
   4. Optionally adjust the **USENET_REFRESH_ATTEMPTS** env. By default this is 10 and seems to be more then enough for the **Torbox pro plan** download speed.
   5. 🎉 Done! Comet will now show the usenet results of **Prowlarr** and use **Torbox** to cache and stream.
 
 > 💡 **Note:** This setup allows for even Uncached files to seem cached. Because the usenet files are not speed restricted by seeders or peers, it allows in combination 
 > with Torbox Pro 80 Gbps download speed to add single Episodes with a size of e.g. 2 GB, which are then instantly downloaded. The USENET_REFRESH_ATTEMPTS parameter checks every 4 seconds—up 
-> to 4 times—whether the file is ready for streaming; if the file is ready before the last attempt, Stremio begins playback immediately.
+> to USENET_REFRESH_ATTEMPTS times—whether the file is ready for streaming; if the file is ready before the last attempt, Stremio begins playback immediately.
 > Meaning in Stremio only a longer loading screen is experienced then usual. This, in combination with the **Advanced Binge Watching** which allows for Single files to be binged watched 
 > and not like usually with torrents which require the whole torrent to be one Season, guarantees a smooth watching experience. Of course this can as well fail if file names are inconsistent across episodes or the usenet file is broken and cant be repaired.
 

@@ -166,6 +166,21 @@
   - Fixes e.g. anime openings being selected as episode
 - Added Season check to uncached file selection
 
+### Update 6.5 - 6.6
+- Added Torbox Support
+- Added Torbox + Prowlarr usenet support
+- Added Advanced Binge Watching allowing for any similar file to be watched as if it was one torrent container
+- Updated Catalogs to also display Imbd Data like posters in the Catalog View
+- Added Support for Torbox usnet files in catalog view
+- Fixed advanced binge watching not working when multiple same hashes by removing dupes. Adjust cached preference by setting BINGE_PREFERENCE env. to "torrent" or "usenet"
+  - This prioritizes "torrents" or "usenet" for next episode. By default prioritizes cached results and then fallbacks to uncached ones.
+- Fixed bunch of other issue causing binge watching to be inconsistent
+- Fixed uncached files not being sorted correctly when status updated to cached
+- Added Auto Caching Next, start caching next usenet episode, this allows for playback to start instantly when finished watching e.g. e1
+  - This only really is useful for usenet as torrents wont be fast enough downloaded
+- Fixed debrid take first overwriting entries with same hash causing binge hash mismatches
+- Moved cache_download_link logic and generate_stremio_streams (generate_unified_streams) into functions for better reusability
+
 ---
 ### List of new envs
 - DEBRID_TAKE_FIRST - Returns this amount of results straight from debrid then runs through title match check
@@ -201,8 +216,16 @@
 - Set CACHE_WIPE = 0 to disable background cache clean up
 
 ### Still need to do:
-- Binge sometimes still not working uncached torbox
-- Maybe Add torbox usenet availability check (Not really needed and will add overhead but for better user experince)
+- Maybe add a lock for background caching next episode, to cancel it if user starts same job manually
+- Check if deduping really works correctly with torrentio and other indexers + Check BINGE_PREFERENCE. Test if handles like expected | Done but further testing cant hurt
+- Start caching next episode automatically | Done for torbox usenet
+
+- Fix Binge Watching not working if request takes to long. E.g. Prowlarr + many indexers takes 20 seconds to fetch and stremio does not wait 20seconds causing binge watching to not work.
+  - Test with day of the jackal. Works for 1-3, then 4 not, then 4-5 works. Very inconsistent behavior even tho bingGroup hash is always correct. Possibly request takes to long.
+  - Possibly also the next episode request has to finish while in loading screen for it to be accepted instead of while the video is already playing
+
+- Add check to debrid take first if file is really downloaded as it might be gathered but still downloading and show up as cached.
+
 - Maybe add Easynews+ as provider as well.
 - Check jackett/prowlarr missing infohashes sometimes, probably rate limits?
   - Issue 5 might be related

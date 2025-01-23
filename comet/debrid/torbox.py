@@ -1,5 +1,7 @@
+import hashlib
 import time
 from typing import Optional
+from urllib.parse import unquote
 
 import aiohttp
 import asyncio
@@ -7,7 +9,8 @@ import asyncio
 from RTN import parse
 
 from comet.utils.general import is_video, check_completion, extra_file_pattern, check_uncached, check_index, \
-    uncached_db_find_container_id, update_container_id_uncached_db, update_torrent_id_uncached_db, uncached_select_index
+    uncached_db_find_container_id, update_container_id_uncached_db, update_torrent_id_uncached_db, \
+    uncached_select_index, find_next_episode, cache_download_link
 from comet.utils.logger import logger
 from comet.utils.models import settings
 
@@ -127,36 +130,53 @@ class TorBox:
 
         return files
 
-    async def get_first_files(self, amount: int):
+    async def get_first_files(self, amount: int, protocol: Optional[str] = "torrent"):
         results = []
-        # Amount not needed for all debrid - but just in case
         if amount < 0 or amount > 1000:
-            logger.warning(f"Max amount exceeded for retrieving torrents explicitly from All-Debrid")
+            logger.warning("Max amount exceeded for retrieving files from Torbox")
             return results
-        try:
-            response = await self.session.get(
-                f"{self.api_url}/torrents/mylist?bypass_cache=true"
-            )
-            torrents = await response.json()
-            torrents_data = torrents["data"]
 
-            for file in torrents_data:
-                results.append(
-                    {
-                        "Title": file['name'],
-                        "InfoHash": file['hash'],
-                        "Size": file["size"],
-                        "Tracker": "torbox",
-                        "Id": file["id"],
-                        "Status": file["download_state"]
-                    }
-                )
-            logger.info(f"Retrieved {len(results)} torrents explicitly from Torbox")
+        protocols = []
+        if protocol in ["all", "torrent"]:
+            protocols.append("torrents")
+        if protocol in ["all", "usenet"]:
+            protocols.append("usenet")
+
+        try:
+            for proto in protocols:
+                endpoint = f"{self.api_url}/{proto}/mylist?bypass_cache=true&limit={amount}"
+                try:
+                    response = await self.session.get(endpoint)
+                    response.raise_for_status()
+                    data = await response.json()
+
+                    for item in data.get("data", []):
+                        if proto == "usenet":
+                            file_name = unquote(item.get("name", ""))
+                            info_hash = hashlib.sha1(file_name.encode()).hexdigest()
+                        else:
+                            file_name = item.get("name", "")
+                            info_hash = item.get("hash", "")
+
+                        results.append({
+                            "Title": file_name,
+                            "InfoHash": info_hash,
+                            "Size": item.get("size", 0),
+                            "Tracker": "torbox",
+                            "Id": item.get("id", ""),
+                            "Protocol": proto,
+                            "Status": "downloadable" if item.get("files") else item.get("download_state", "")
+                        })
+
+                except Exception as e:
+                    logger.error(f"Failed to fetch {proto} files: {str(e)}")
+
+            logger.info(f"Retrieved {len(results)} files from Torbox")
             return results
+
         except Exception as e:
-            logger.warning(
-                f"Exception while getting recent files on Torbox: {e}"
-            )
+            logger.error(f"Critical error in get_first_files: {str(e)}")
+            return []
 
     async def add_magnet(self, hash: str):
         # Handle magnet link
@@ -237,12 +257,15 @@ class TorBox:
 
         return get_download_link["data"]
 
-    async def handle_uncached(self, is_uncached: dict, hash: str, index: str, debrid_key: str):
+    async def handle_uncached(self, is_uncached: dict, hash: str, index: str, debrid_key: str, search_next: bool):
         container_id = is_uncached.get('container_id', None)
         torrent_id = is_uncached.get('torrent_id', None)
         has_magnet = is_uncached.get('has_magnet', None)
         protocol = is_uncached.get('protocol')
         name = is_uncached.get('raw_title')
+        binge_hash = is_uncached.get('binge_hash')
+        season = is_uncached.get('season')
+        episode = is_uncached.get('episode')
 
         if not container_id:
             possible_container_id = await uncached_db_find_container_id(debrid_key, hash)
@@ -286,7 +309,7 @@ class TorBox:
                 time.sleep(4)
 
                 magnet_info_result = await self.get_info(container_id, None, protocol)
-                if not magnet_info_result:
+                if not magnet_info_result or magnet_info_result['data'].get('download_state') == "failed":
                     logger.warning(
                         f"Exception while getting file from Torbox, please retry, for {hash}|{index}"
                     )
@@ -313,24 +336,84 @@ class TorBox:
             torrent_id = selected_id
             await update_torrent_id_uncached_db(debrid_key, hash, index, selected_id)
 
+        # Start Caching potential next episode
+        if search_next and int(index) > 0 and protocol == "usenet":
+            asyncio.create_task(
+                self.background_cache_next_episode(
+                    debrid_key=debrid_key,
+                    binge_hash=binge_hash,
+                    season=season,
+                    episode=episode,
+                    name=name,
+                    hash=hash,
+                    index=index
+                )
+            )
         return await self.get_download_link(torrent_id, container_id, protocol)
 
-    async def handle_cached(self, hash: str, index: str):
-        torrent_data = await self.get_info(None, hash, "torrent")
-        if not torrent_data:
-            torrent_data = {'id': await self.add_magnet(hash)}
-        return await self.get_download_link(index, torrent_data['id'], "torrent")
+    async def handle_cached(self, hash: str, index: str, usenet_id: Optional[str] = None):
+        if not usenet_id:
+            torrent_data = await self.get_info(None, hash, "torrent")
+            if not torrent_data:
+                torrent_data = {'id': await self.add_magnet(hash)}
+            return await self.get_download_link(index, torrent_data['id'], "torrent")
+        else:
+            torrent_data = await self.get_info(usenet_id, None, "usenet")
+            torrent_data = torrent_data["data"]
+            return await self.get_download_link(index, torrent_data['id'], "usenet")
 
-    async def generate_download_link(self, hash: str, index: str, debrid_key: str):
+    async def generate_download_link(self, hash: str, index: str, debrid_key: str, usenet_id: Optional[str] = None, search_next: Optional[bool] = True):
         try:
             # Check if torrent Uncached
             is_uncached = await check_uncached(hash, index, debrid_key)
             if is_uncached:
-                return await self.handle_uncached(is_uncached, hash, index, debrid_key)
+                return await self.handle_uncached(is_uncached, hash, index, debrid_key, search_next)
             else:
                 index = await check_index(hash, index, debrid_key)
-                return await self.handle_cached(hash, index)
+                return await self.handle_cached(hash, index, usenet_id)
         except Exception as e:
             logger.warning(
                 f"Exception while getting download link from TorBox for {hash}|{index}: {e}"
             )
+
+    async def background_cache_next_episode(self, debrid_key, binge_hash, season, episode, name, hash, index):
+        max_attempts = 4
+        logger.info(f"🎬 Starting background caching for {name} S{season}E{episode+1}")
+
+        for attempt in range(max_attempts):
+            try:
+                if attempt > 0:
+                    logger.info(f"⏳ [Background] Waiting 20s before retry ({attempt}/{max_attempts-1})")
+                    await asyncio.sleep(20)
+
+                # Create new session for background task
+                async with aiohttp.ClientSession() as bg_session:
+                    # Create new TorBox instance with fresh session
+                    bg_torbox = TorBox(
+                        session=bg_session,
+                        debrid_api_key=self.debrid_api_key
+                    )
+
+                    logger.info(f"🔍 [Background] Checking for S{season}E{episode+1} (attempt {attempt+1})")
+                    found_episode = await find_next_episode(debrid_key, binge_hash, int(season), int(episode), "torbox")
+
+                    if found_episode:
+                        logger.info(f"✅ [Background] Found next episode: {found_episode['hash'][:6]}...")
+                        # Use the background TorBox instance
+                        next_download_link = await bg_torbox.generate_download_link(
+                            found_episode["hash"],
+                            found_episode["file_index"],
+                            debrid_key,
+                            None,
+                            False
+                        )
+                        if next_download_link:
+                            await cache_download_link(debrid_key, hash, index, next_download_link)
+                            logger.info(f"🔗 [Background] Cached next episode link")
+                            break
+                        else:
+                            logger.error(f"⚠️ [Background] Could not get download link")
+
+
+            except Exception as e:
+                logger.error(f"⚠️ [Background] Cache attempt failed: {str(e)}")

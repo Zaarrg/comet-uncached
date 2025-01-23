@@ -35,6 +35,7 @@ class AppSettings(BaseSettings):
     ZILEAN_URL: Optional[str] = None
     ZILEAN_TAKE_FIRST: Optional[int] = 500
     DEBRID_TAKE_FIRST: Optional[int] = 0
+    BINGE_PREFERENCE: Optional[str] = "torrent"
     SCRAPE_TORRENTIO: Optional[bool] = False
     SCRAPE_MEDIAFUSION: Optional[bool] = False
     MEDIAFUSION_URL: Optional[str] = "https://mediafusion.elfhosted.com"

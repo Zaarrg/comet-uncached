@@ -4,6 +4,7 @@ import os
 import re
 import zlib
 from typing import Literal, List, Union, Callable, Any
+from urllib.parse import quote
 
 import PTT
 import aiohttp
@@ -183,7 +184,7 @@ translation_table = {
 translation_table = str.maketrans(translation_table)
 info_hash_pattern = re.compile(r"\b([a-fA-F0-9]{40})\b")
 extra_file_pattern = re.compile(r"\b(sample|ncop|nced|op|ed|extras|special|omake|ova|ona|oad|pv|cm|promo|trailer|preview|teaser|creditless|behind[ _-]?the[ _-]?scenes|making[ _-]?of|deleted[ _-]?scenes)\b", re.IGNORECASE)
-
+debrid_services = {"debridlink", "realdebrid", "alldebrid", "torbox"}
 
 catalog_config = {
     "realdebrid": {
@@ -221,9 +222,9 @@ catalog_config = {
     },
     "torbox": {
         "amount": 1000,
-        "preview_filter": lambda files: [file for file in files if file.get('Status') == "cached" or file.get('Status') == "uploading" or file.get('Status') == "completed"],
+        "preview_filter": lambda files: [file for file in files if file.get('Status') == "downloadable"],
         "meta_filter": lambda files: [file for file in files if is_video(file.get('name'))],
-        "files_getter": lambda torrent: torrent.get("data").get("files"),
+        "files_getter": lambda torrent: torrent.get("data").get("files", []),
         "title_getter": lambda torrent: torrent.get("data").get("name"),
         "torrent_id_getter": lambda torrent: str(torrent.get("data").get("id")),
         "file_id_getter": lambda file, i: file.get("id"),
@@ -395,15 +396,9 @@ def build_custom_filename(parsed_data: dict):
     fields_order = [
         "normalized_title",
         "group",
-        "resolution",
+        "raw_resolution",
         "quality",
         "languages",
-        "codec",
-        "audio",
-        "channels",
-        "network",
-        "hdr",
-        "audio",
         "year"
     ]
     parts = []
@@ -414,8 +409,9 @@ def build_custom_filename(parsed_data: dict):
         if not value:
             continue
         if isinstance(value, list):
-            joined = ".".join(str(item) for item in value)
-            if joined:
+            filtered_values = [str(item) for item in value if str(item).lower() != "multi"]
+            if filtered_values:
+                joined = ".".join(filtered_values)
                 parts.append(joined)
         else:
             parts.append(str(value))
@@ -928,7 +924,7 @@ async def check_uncached(hash: str, file_index: str, debrid_key: str):
     # Fetch uncached torrent data from the database
     uncached_torrent = await database.fetch_one(
         """
-        SELECT torrent_id, container_id, link, magnet, data, name, raw_title, episode, season, protocol
+        SELECT binge_hash, torrent_id, container_id, link, magnet, data, name, raw_title, episode, season, protocol
         FROM cache
         WHERE debrid_key = :debrid_key AND info_hash = :hash AND file_index = :file_index AND uncached = :uncached
         """,
@@ -941,6 +937,7 @@ async def check_uncached(hash: str, file_index: str, debrid_key: str):
 
         return {
             "name": uncached_torrent["name"],
+            "binge_hash": uncached_torrent["binge_hash"],
             "raw_title": uncached_torrent["raw_title"],
             "episode": uncached_torrent["episode"],
             "season": uncached_torrent["season"],
@@ -1025,6 +1022,7 @@ async def add_uncached_files(
         kitsu: bool,
 ):
     allowed_tracker_ids_set = {tracker_id.lower() for tracker_id in allowed_tracker_ids}
+    allowed_tracker_ids_set.update(debrid_services)
     found_uncached = 0
 
     for torrent in torrents:
@@ -1149,6 +1147,8 @@ def get_balanced_hashes(hashes: dict, config: dict, type: str):
             continue
 
         resolution = hash_info["resolution"]
+        if not hash_info.get("raw_resolution", None):
+            hash_info["raw_resolution"] = resolution
         hash_info["resolution"] = hash_info["resolution"].capitalize()
 
         if not include_all_resolutions and resolution not in config_resolutions:
@@ -1157,6 +1157,9 @@ def get_balanced_hashes(hashes: dict, config: dict, type: str):
         if hash_info['uncached'] and (include_all_resolutions or 'Uncached' in config_resolutions):
             hash_info["resolution"] = 'Uncached'
             resolution = 'Uncached'
+        else:
+            hash_info["resolution"] = hash_info["raw_resolution"]
+            resolution = hash_info["raw_resolution"]
 
         if resolution not in hashes_by_resolution:
             hashes_by_resolution[resolution] = []
@@ -1276,7 +1279,7 @@ def apply_sorting(hashes_by_resolution, hashes, config_resolutions_order, config
         """Move uncached items to the bottom of each resolution group."""
         for res, hash_list in sorted_hashes_by_resolution.items():
             # Separate cached and uncached
-            cached = [hash_key for hash_key in hash_list if not hashes[hash_key]["data"].get("uncached", False)]
+            cached = [hash_key for hash_key in hash_list if not hashes[hash_key]["data"].get("uncached", False) or hashes[hash_key]["data"]['tracker'].lower() in debrid_services]
             uncached = [hash_key for hash_key in hash_list if hash_key not in cached]
             # Merge and update
             sorted_hashes_by_resolution[res] = cached + uncached
@@ -1453,7 +1456,7 @@ def format_title(data: dict, config: dict):
             title += f"💿 {metadata}\n"
 
     if has_all or "Uncached" in result_format:
-        if data.get("uncached", False):
+        if data.get("uncached", False) and data['tracker'].lower() not in debrid_services:
             title += f"⚠️ Uncached"
 
     if has_all or "Size" in result_format:
@@ -1495,9 +1498,22 @@ def get_client_ip(request: Request):
         else request.client.host
     )
 
+async def cache_download_link(debrid_key, hash, index, download_link):
+    current_time = time.time()
+    await database.execute(
+        f"INSERT {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}INTO download_links (debrid_key, hash, file_index, link, timestamp) VALUES (:debrid_key, :hash, :file_index, :link, :timestamp){' ON CONFLICT DO NOTHING' if settings.DATABASE_TYPE == 'postgresql' else ''}",
+        {
+            "debrid_key": debrid_key,
+            "hash": hash,
+            "file_index": index,
+            "link": download_link,
+            "timestamp": current_time,
+        },
+    )
+
 
 async def add_torrent_to_cache(
-    config: dict, name: str, season: int, episode: int, sorted_ranked_files: dict
+    config: dict, name: str, season: int, episode: int, sorted_ranked_files: dict, balanced_hashes: dict
 ):
     # trace of which indexers were used when cache was created - not optimal
     indexers = config["indexers"].copy()
@@ -1519,34 +1535,166 @@ async def add_torrent_to_cache(
         searched["data"]["tracker"] = indexer
 
         sorted_ranked_files[hash] = searched
-    values = [
-        {
-            "debridService": config["debridService"],
-            "info_hash": sorted_ranked_files[torrent]["infohash"],
-            "debrid_key": derive_debrid_key(config["debridApiKey"]) if sorted_ranked_files[torrent]["data"]["uncached"] else '',
-            "name": name,
-            "raw_title": sorted_ranked_files[torrent]["raw_title"],
-            "season": season,
-            "episode": episode,
-            "file_index": sorted_ranked_files[torrent]["data"]["index"],
-            "torrent_id": sorted_ranked_files[torrent]["data"]["torrent_id"],
-            "container_id": sorted_ranked_files[torrent]["data"]["container_id"],
-            "uncached": sorted_ranked_files[torrent]["data"]["uncached"],
-            "link": sorted_ranked_files[torrent]["data"]["link"],
-            "magnet": sorted_ranked_files[torrent]["data"]["magnet"],
-            "protocol": sorted_ranked_files[torrent]["data"]["protocol"],
-            "tracker": sorted_ranked_files[torrent]["data"]["tracker"].split("|")[0].lower(),
-            "data": orjson.dumps(sorted_ranked_files[torrent]).decode("utf-8"),
-            "timestamp": time.time(),
-        }
-        for torrent in sorted_ranked_files
-    ]
+        first_resolution = next(iter(balanced_hashes))
+        balanced_hashes[first_resolution].append(hash)
 
+    values = []
+    for resolution in balanced_hashes:
+        for torrent in balanced_hashes[resolution]:
+            values.append({
+                "debridService": config["debridService"],
+                "info_hash": sorted_ranked_files[torrent]["infohash"],
+                "binge_hash": sorted_ranked_files[torrent]["data"]["binge_hash"] if not sorted_ranked_files[torrent]["infohash"].startswith("searched") else "None",
+                "debrid_key": derive_debrid_key(config["debridApiKey"]),
+                "name": name,
+                "raw_title": sorted_ranked_files[torrent]["raw_title"] if not sorted_ranked_files[torrent]["infohash"].startswith("searched") else "None",
+                "season": season,
+                "episode": episode,
+                "file_index": sorted_ranked_files[torrent]["data"]["index"] if not sorted_ranked_files[torrent]["infohash"].startswith("searched") else "None",
+                "torrent_id": sorted_ranked_files[torrent]["data"]["torrent_id"] if not sorted_ranked_files[torrent]["infohash"].startswith("searched") else "None",
+                "container_id": sorted_ranked_files[torrent]["data"]["container_id"] if not sorted_ranked_files[torrent]["infohash"].startswith("searched") else "None",
+                "uncached": sorted_ranked_files[torrent]["data"]["uncached"] if not sorted_ranked_files[torrent]["infohash"].startswith("searched") else "None",
+                "link": sorted_ranked_files[torrent]["data"]["link"] if not sorted_ranked_files[torrent]["infohash"].startswith("searched") else "None",
+                "magnet": sorted_ranked_files[torrent]["data"]["magnet"] if not sorted_ranked_files[torrent]["infohash"].startswith("searched") else "None",
+                "protocol": sorted_ranked_files[torrent]["data"]["protocol"] if not sorted_ranked_files[torrent]["infohash"].startswith("searched") else "None",
+                "tracker": sorted_ranked_files[torrent]["data"]["tracker"].split("|")[0].lower(),
+                "data": orjson.dumps(sorted_ranked_files[torrent]).decode("utf-8"),
+                "timestamp": time.time(),
+            })
     query = f"""
         INSERT {'OR IGNORE ' if settings.DATABASE_TYPE == 'sqlite' else ''}
-        INTO cache (debridService, info_hash, debrid_key, name, raw_title, season, episode, file_index, torrent_id, container_id, uncached, link, magnet, tracker, protocol, data, timestamp)
-        VALUES (:debridService, :info_hash, :debrid_key, :name, :raw_title, :season, :episode, :file_index, :torrent_id, :container_id, :uncached, :link, :magnet, :tracker, :protocol, :data, :timestamp)
+        INTO cache (debridService, info_hash, binge_hash, debrid_key, name, raw_title, season, episode, file_index, torrent_id, container_id, uncached, link, magnet, tracker, protocol, data, timestamp)
+        VALUES (:debridService, :info_hash, :binge_hash, :debrid_key, :name, :raw_title, :season, :episode, :file_index, :torrent_id, :container_id, :uncached, :link, :magnet, :tracker, :protocol, :data, :timestamp)
         {' ON CONFLICT DO NOTHING' if settings.DATABASE_TYPE == 'postgresql' else ''}
     """
-
     await database.execute_many(query, values)
+
+
+def generate_unified_streams(
+        request,
+        config,
+        b64config,
+        binge_preference,
+        sorted_files,
+        balanced_hashes,
+        debrid_extension,
+        trackers=None,
+        is_cached=False,
+        debrid_emoji="⚡"
+):
+    best_entries = {}
+
+    for resolution in balanced_hashes:
+        for hash_key in balanced_hashes[resolution]:
+            data = sorted_files[hash_key]["data"]
+
+            # Generate binge hash
+            binge_hash = sorted_files[hash_key]["data"].get("binge_hash", None)
+            if not binge_hash:
+                binge_filename = build_custom_filename(data)
+                binge_hash = hashlib.sha1(binge_filename.encode('utf-8')).hexdigest()
+                sorted_files[hash_key]["data"]["binge_hash"] = binge_hash # Add for cache
+
+            # Calculate priority
+            protocol = data["protocol"]
+            uncached = data["uncached"]
+            priority = (
+                1 if uncached else 0,  # Cached first
+                0 if protocol == binge_preference else 1
+            )
+
+            # Build base entry
+            entry = {
+                "name": f"[{debrid_extension}{debrid_emoji}] Comet {data['resolution']}",
+                "description": format_title(data, config),
+                "torrentTitle": data.get("torrent_title"),
+                "torrentSize": data.get("torrent_size"),
+                "behaviorHints": {
+                    "filename": data["raw_title"],
+                    "bingeGroup": f"comet|{binge_hash}",
+                }
+            }
+
+            # URL/InfoHash handling
+            url_friendly_file = quote(data["raw_title"].replace('/', '-'), safe='')
+            if is_cached and not config.get("debridApiKey"):
+                # Magnet link case
+                entry.update({
+                    "infoHash": hash_key,
+                    "fileIdx": 1 if "|" in data["index"] else int(data["index"]),
+                    "sources": trackers or []
+                })
+            else:
+                # Debrid URL case
+                if settings.TOKEN and not is_cached:
+                    short_config = short_encrypt(
+                        orjson.dumps({
+                            "debridApiKey": config["debridApiKey"],
+                            "debridStreamProxyPassword": config["debridStreamProxyPassword"],
+                            "debridService": config["debridService"]
+                        }).decode("utf-8"),
+                        settings.TOKEN
+                    )
+                else:
+                    short_config = b64config
+
+                entry["url"] = (
+                    f"{request.url.scheme}://{request.url.netloc}"
+                    f"{settings.URL_PREFIX or ''}/"
+                    f"{short_config}/playback/{hash_key}/"
+                    f"{data['index']}/{url_friendly_file}"
+                )
+
+            # Update best entry
+            if binge_hash not in best_entries or priority < best_entries[binge_hash]["priority"]:
+                best_entries[binge_hash] = {
+                    "entry": entry,
+                    "priority": priority
+                }
+
+    return [e["entry"] for e in best_entries.values()]
+
+async def find_next_episode(debrid_key: str, binge_hash: str, season: int, current_episode: int, debrid_service: str):
+    # Get next episode number
+    next_episode = current_episode + 1
+
+    # Fetch potential candidates from database
+    candidates = await database.fetch_all(
+        """
+        SELECT info_hash AS hash, file_index, protocol, uncached
+        FROM cache
+        WHERE debrid_key = :debrid_key
+          AND binge_hash = :binge_hash
+          AND season = :season
+          AND episode = :next_episode
+          AND debridService = :debrid_service
+        """,
+        {
+            "debrid_key": debrid_key,
+            "binge_hash": binge_hash,
+            "season": season,
+            "next_episode": next_episode,
+            "debrid_service": debrid_service
+        }
+    )
+
+    if not candidates:
+        return None
+
+    # Sort using same priority logic as generate_unified_streams
+    sorted_candidates = sorted(
+        candidates,
+        key=lambda x: (
+            1 if x["uncached"] else 0,  # Cached first
+            0 if x["protocol"] == settings.BINGE_PREFERENCE else 1  # Preferred protocol first
+        )
+    )
+
+    # Return best candidate
+    best = sorted_candidates[0]
+    return {
+        "hash": best["hash"],
+        "file_index": best["file_index"],
+        "protocol": best["protocol"],
+        "uncached": best["uncached"]
+    }
