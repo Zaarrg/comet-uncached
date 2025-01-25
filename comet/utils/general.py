@@ -556,22 +556,27 @@ async def get_torrentio(log_name: str, type: str, full_id: str):
             ).json()
 
         for torrent in get_torrentio["streams"]:
-            title_full = torrent["title"]
-            title = title_full.split("\n")[0]
-            tracker = title_full.split("⚙️ ")[1].split("\n")[0]
-            size = size_to_bytes(title_full.split("💾 ")[1].split(" ⚙️")[0])
-            seeders = int(title_full.split("👤")[1].split()[0])
+            try:
+                title_full = torrent["title"]
+                title = title_full.split("\n")[0]
+                tracker = title_full.split("⚙️ ")[1].split("\n")[0]
+                size = size_to_bytes(title_full.split("💾 ")[1].split(" ⚙️")[0])
+                seeders = int(title_full.split("👤")[1].split()[0])
 
 
-            results.append(
-                {
-                    "Title": title,
-                    "InfoHash": torrent["infoHash"],
-                    "Size": size,
-                    "Tracker": f"Torrentio|{tracker}",
-                    "Seeders": seeders
-                }
-            )
+                results.append(
+                    {
+                        "Title": title,
+                        "InfoHash": torrent["infoHash"],
+                        "Size": size,
+                        "Tracker": f"Torrentio|{tracker}",
+                        "Seeders": seeders
+                    }
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Exception while parsing torrent for {torrent} with Torrentio, with error: {e}"
+                )
 
         logger.info(f"{len(results)} torrents found for {log_name} with Torrentio")
     except Exception as e:
