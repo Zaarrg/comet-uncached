@@ -1357,7 +1357,7 @@ async def search_imdb_id(search_query: str, session: ClientSession):
     params = {
         "operationName": "AdvancedTitleSearch",
         "variables": f'{{"first":2,"locale":"en-GB","sortBy":"POPULARITY","sortOrder":"ASC","titleTextConstraint":{{"searchTerm":"{search_query}"}}}}',
-        "extensions": '{"persistedQuery":{"sha256Hash":"60a7b8470b01671336ffa535b21a0a6cdaf50267fa2ab55b3e3772578a8c1f00","version":1}}'
+        "extensions": '{"persistedQuery":{"sha256Hash":"6842af47c3f1c43431ae23d394f3aa05ab840146b146a2666d4aa0dc346dc482","version":1}}'
     }
     try:
         gathered_results = await session.get(f'https://caching.graphql.imdb.com/', params=params, headers=headers)
