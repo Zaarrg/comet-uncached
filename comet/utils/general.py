@@ -1352,7 +1352,13 @@ def format_metadata(data: dict):
 
 async def search_imdb_id(search_query: str, session: ClientSession):
     headers = {
-        "content-type": "application/json"
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/115.0.0.0 Safari/537.36"
+        )
     }
     params = {
         "operationName": "AdvancedTitleSearch",
